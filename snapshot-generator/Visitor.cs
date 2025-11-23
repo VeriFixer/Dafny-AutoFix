@@ -126,6 +126,12 @@ public abstract class Visitor
     protected virtual void HandleMethod(Method method) {
         if (method.Body == null) return;
         HandleBlock(method.Body);
+        
+        VisitReqEns(method.Req);
+        VisitReqEns(method.Ens);
+        VisitDecreases(method.Decreases);
+        VisitReadsModifies(method.Reads);
+        VisitReadsModifies(method.Mod);
     }
 
     protected virtual void HandleFunction(Function function) {
@@ -225,28 +231,38 @@ public abstract class Visitor
             HandleStatement(ifStmt.Els);
         }
     }
+
+    protected virtual void VisitStatement(LoopStmt loopStmt) {
+        VisitReqEns(loopStmt.Invariants);
+        VisitDecreases(loopStmt.Decreases);
+        VisitReadsModifies(loopStmt.Mod);
+    }
     
     protected virtual void VisitStatement(WhileStmt whileStmt) {
         HandleExpression(whileStmt.Guard);
         if (whileStmt.Body != null) 
-            HandleBlock(whileStmt.Body);   
+            HandleBlock(whileStmt.Body);
+        VisitStatement(whileStmt as LoopStmt);
     }
 
     protected virtual void VisitStatement(ForLoopStmt forStmt) {
         HandleExpression(forStmt.Start);
         HandleExpression(forStmt.End);
         HandleBlock(forStmt.Body);
+        VisitStatement(forStmt as LoopStmt);
     }
 
     protected virtual void VisitStatement(ForallStmt forStmt) {
         HandleExpression(forStmt.Range);
         HandleStatement(forStmt.Body);
+        VisitReqEns(forStmt.Ens);
     }
     
     protected virtual void VisitStatement(BreakOrContinueStmt bcStmt) { }
 
     protected virtual void VisitStatement(AlternativeLoopStmt altLStmt) {
         HandleGuardedAlternatives(altLStmt.Alternatives);
+        VisitStatement(altLStmt as LoopStmt);
     }
 
     protected virtual void VisitStatement(AlternativeStmt altStmt) {
@@ -280,6 +296,7 @@ public abstract class Visitor
     protected virtual void VisitStatement(ModifyStmt mdStmt) {
         if (mdStmt.Body == null) return;
         HandleStatement(mdStmt.Body);
+        VisitReadsModifies(mdStmt.Mod);
     }
 
     protected virtual void VisitStatement(HideRevealStmt hRStmt) {
@@ -288,6 +305,7 @@ public abstract class Visitor
 
     protected virtual void VisitStatement(BlockByProofStmt bBpStmt) {
         HandleStatement(bBpStmt.Body);
+        HandleStatement(bBpStmt.Proof);
     }
 
     protected virtual void VisitStatement(SkeletonStatement skStmt) {
@@ -299,12 +317,22 @@ public abstract class Visitor
     
     // statements used specifically in specs
     // by default we don't visit these since we are not mutating them
-    protected virtual void VisitStatement(OpaqueBlock opqBlock) { }
+    protected virtual void VisitStatement(OpaqueBlock opqBlock) {
+        VisitReqEns(opqBlock.Ensures);
+        VisitReadsModifies(opqBlock.Modifies);
+    }
     
     // includes AssertStmt, AssumeStmt, ExpectStmt
-    protected virtual void VisitStatement(PredicateStmt predStmt) { }
-    
-    protected virtual void VisitStatement(CalcStmt calcStmt) { }
+    protected virtual void VisitStatement(PredicateStmt predStmt) {
+        HandleExpression(predStmt.Expr);
+    }
+
+    protected virtual void VisitStatement(CalcStmt calcStmt) {
+        HandleExprList(calcStmt.Lines);
+        foreach (var stmt in calcStmt.Hints) {
+            HandleStatement(stmt);
+        }
+    }
     
     /// ----------------------------
     /// Group of expression visitors
@@ -441,6 +469,9 @@ public abstract class Visitor
         if (compExpr is MapComprehension mCompExpr && mCompExpr.TermLeft != null) {
             HandleExpression(mCompExpr.TermLeft);
         }
+        if (compExpr is LambdaExpr lExpr) {
+            VisitReadsModifies(lExpr.Reads);
+        }
     }
 
     protected virtual void VisitExpression(DatatypeUpdateExpr dtUExpr) {
@@ -457,12 +488,39 @@ public abstract class Visitor
         HandleStatement(stmtExpr.S);
         HandleExpression(stmtExpr.E); 
     }
+
+    protected virtual void VisitExpression(OldExpr oldExpr) {
+        HandleExpression(oldExpr.E);
+    }
     
-    protected virtual void VisitExpression(OldExpr oldExpr) { }
+    protected virtual void VisitExpression(UnchangedExpr unchExpr) {
+        var exprs = unchExpr.Frame.Select(e => e.E).ToList();
+        HandleExprList(exprs);
+    }
+
+    protected virtual void VisitExpression(DecreasesToExpr dToExpr) {
+        HandleExprList(dToExpr.OldExpressions.ToList());
+        HandleExprList(dToExpr.NewExpressions.ToList());
+    }
     
-    protected virtual void VisitExpression(UnchangedExpr unchExpr) { }
+    /// --------------------------
+    /// Group of contract visitors
+    /// --------------------------
+    protected virtual void VisitReqEns(List<AttributedExpression> attExprs) {
+        var exprs = attExprs.Select(e => e.E).ToList();
+        HandleExprList(exprs);
+    }
     
-    protected virtual void VisitExpression(DecreasesToExpr dToExpr) { }
+    protected virtual void VisitDecreases(Specification<Expression> expr) {
+        if (expr.Expressions == null) return;
+        HandleExprList(expr.Expressions);
+    }
+
+    protected virtual void VisitReadsModifies(Specification<FrameExpression> expr) {
+        if (expr.Expressions == null) return;
+        var exprs = expr.Expressions.Select(e => e.E).ToList();
+        HandleExprList(exprs);
+    }
     
     /// ----------------------
     /// Group of visitor utils
