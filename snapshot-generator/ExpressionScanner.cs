@@ -7,6 +7,7 @@ public class ExpressionScanner : Visitor
 {
     private readonly List<Expression> _defaultClassAbstractions = [];
     private readonly List<(string, string)> _allBoolArgumentlessPreds = [];
+    private readonly List<string> _usedObjectNames = [];
     private bool _insideDefaultClass;
     private bool _insideFaultyTopLevelDecl;
     private string _currentTopLevelDecl = "";
@@ -78,32 +79,20 @@ public class ExpressionScanner : Visitor
         if (faultyMethod == null)
             return;
 
-        CollectBoolArgumentlessCalls(faultyMethod);
+        // CollectBoolArgumentlessCalls(faultyMethod);
         base.HandleMethod(faultyMethod);
     }
     
-    protected override void VisitStatement(VarDeclStmt vDeclStmt) {
-        CollectBoolArgumentlessCalls(vDeclStmt);
-        base.VisitStatement(vDeclStmt);
+    protected override void VisitExpression(NameSegment nSegExpr) {
+        CollectBoolArgumentlessCalls(nSegExpr.Origin, nSegExpr.Type, nSegExpr.Name);
     }
 
     /// -------------------------
     /// Expression collection
     /// -------------------------
-    private void CollectBoolArgumentlessCalls(Method faultyMethod) {
-        foreach (var input in faultyMethod.Ins) {
-            CollectBoolArgumentlessCalls(input.Origin, input.Type, input.Name);
-        }
-    }
-
-    private void CollectBoolArgumentlessCalls(VarDeclStmt vDeclStmt) {
-        foreach (var lhs in vDeclStmt.Locals) {
-            CollectBoolArgumentlessCalls(lhs.Origin, lhs.Type, lhs.Name);
-        }
-    }
-
     private void CollectBoolArgumentlessCalls(IOrigin origin, Type type, string objectName) {
-        if (!(type is UserDefinedType)) return;
+        if (!(type is UserDefinedType) || _usedObjectNames.Contains(objectName)) 
+            return;
         var applicablePreds = _allBoolArgumentlessPreds.Where(
             (pred) => pred.Item1 == type.ToString()
         );
@@ -113,5 +102,6 @@ public class ExpressionScanner : Visitor
             var callExpr = new ExprDotName(origin, lhs, suffixName, null);
             SnapshotGenerator.ProgramAbstractions.Add(callExpr);
         }
+        _usedObjectNames.Add(objectName);
     }
 }
