@@ -100,9 +100,17 @@ public class ExpressionScanner : Visitor
     private void CollectExpressions(Expression expr) {
         if (expr.Type is BoolType && !ExprAlreadyCollected(expr, SnapshotGenerator.ProgramAbstractions))
             SnapshotGenerator.ProgramAbstractions.Add(expr);
-        if ((expr.Type is IntType || (expr.Type is UserDefinedType uType && uType.Name == "nat")) 
+        if ((expr.Type is IntType || (expr.Type is UserDefinedType intUType && intUType.Name == "nat")) 
             && !ExprAlreadyCollected(expr, _integerExprs))
             _integerExprs.Add(expr);
+        if (expr.Type is UserDefinedType uType && uType.Name[^1] == '?') {
+            if (expr is LiteralExpr lExpr && lExpr.Value == null)
+                return;
+            var nullLiteral = new LiteralExpr(expr.Origin, null);
+            var nullCompExpr = new BinaryExpr(expr.Origin, BinaryExpr.Opcode.Eq, expr, nullLiteral);
+            if (!ExprAlreadyCollected(nullCompExpr, SnapshotGenerator.ProgramAbstractions))
+                SnapshotGenerator.ProgramAbstractions.Add(nullCompExpr);
+        }
     }
     
     private void CollectBoolArgumentlessCalls(IOrigin origin, Type type, string objectName) {
