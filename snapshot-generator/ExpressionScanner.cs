@@ -6,6 +6,7 @@ namespace SnapshotGenerator;
 public class ExpressionScanner : Visitor
 {
     private readonly List<Expression> _defaultClassAbstractions = [];
+    private readonly List<Expression> _integerExprs = [];
     private readonly List<(string, string)> _allBoolArgumentlessPreds = [];
     private readonly List<string> _usedObjectNames = [];
     private bool _insideDefaultClass;
@@ -61,9 +62,11 @@ public class ExpressionScanner : Visitor
     protected override void HandleFunction(Function function) {
         // collect argumentless boolean predicates
         if (function.ResultType is BoolType && function.Ins.Count == 0 && function.Body != null) {
-            if (!_insideDefaultClass && _insideFaultyTopLevelDecl) {
+            if (!_insideDefaultClass && _insideFaultyTopLevelDecl && 
+                !ExprAlreadyCollected(function.Body, SnapshotGenerator.ProgramAbstractions)) 
+            {
                 SnapshotGenerator.ProgramAbstractions.Add(function.Body);
-            } else {
+            } else if (!ExprAlreadyCollected(function.Body, _defaultClassAbstractions)) {
                 _defaultClassAbstractions.Add(function.Body);
             }
             // argumentless boolean predicates callable by objects of type _currentTopLevelDecl
@@ -78,9 +81,13 @@ public class ExpressionScanner : Visitor
         var faultyMethod = SnapshotGenerator.FaultyMethod;
         if (faultyMethod == null)
             return;
-
-        // CollectBoolArgumentlessCalls(faultyMethod);
         base.HandleMethod(faultyMethod);
+        CollectBoolExprsFromIntegers();
+    }
+
+    protected override void HandleExpression(Expression expr) {
+        CollectExpressions(expr);
+        base.HandleExpression(expr);
     }
     
     protected override void VisitExpression(NameSegment nSegExpr) {
@@ -90,6 +97,14 @@ public class ExpressionScanner : Visitor
     /// -------------------------
     /// Expression collection
     /// -------------------------
+    private void CollectExpressions(Expression expr) {
+        if (expr.Type is BoolType && !ExprAlreadyCollected(expr, SnapshotGenerator.ProgramAbstractions))
+            SnapshotGenerator.ProgramAbstractions.Add(expr);
+        if ((expr.Type is IntType || (expr.Type is UserDefinedType uType && uType.Name == "nat")) 
+            && !ExprAlreadyCollected(expr, _integerExprs))
+            _integerExprs.Add(expr);
+    }
+    
     private void CollectBoolArgumentlessCalls(IOrigin origin, Type type, string objectName) {
         if (!(type is UserDefinedType) || _usedObjectNames.Contains(objectName)) 
             return;
@@ -100,8 +115,43 @@ public class ExpressionScanner : Visitor
             var lhs = new NameSegment(origin, objectName, null);
             var suffixName = new Name(pred.Item2);
             var callExpr = new ExprDotName(origin, lhs, suffixName, null);
-            SnapshotGenerator.ProgramAbstractions.Add(callExpr);
+            if (!ExprAlreadyCollected(callExpr, SnapshotGenerator.ProgramAbstractions))
+                SnapshotGenerator.ProgramAbstractions.Add(callExpr);
         }
         _usedObjectNames.Add(objectName);
+    }
+
+    private void CollectBoolExprsFromIntegers() {
+        var containsZeroLiteral = false;
+        foreach (var intExpr in _integerExprs) {
+            if (intExpr is LiteralExpr lExpr && lExpr.Value is int i && i == 0)
+                containsZeroLiteral = true;
+        }
+        
+        List<BinaryExpr.Opcode> ops = [BinaryExpr.Opcode.Eq, BinaryExpr.Opcode.Lt, BinaryExpr.Opcode.Le];
+        foreach (var intExpr1 in _integerExprs) {
+            foreach (var intExpr2 in _integerExprs) {
+                if (intExpr1 == intExpr2) continue;
+                ops.ForEach((o) => {
+                    var intCompExpr = new BinaryExpr(intExpr1.Origin, o, intExpr1, intExpr2);
+                    if (!ExprAlreadyCollected(intCompExpr, SnapshotGenerator.ProgramAbstractions))
+                        SnapshotGenerator.ProgramAbstractions.Add(intCompExpr);
+                });
+            }
+            
+            if (containsZeroLiteral) continue;
+            ops.ForEach((o) => {
+                var intCompExpr = new BinaryExpr(intExpr1.Origin, o, intExpr1, new LiteralExpr(intExpr1.Origin, 0));
+                if (!ExprAlreadyCollected(intCompExpr, SnapshotGenerator.ProgramAbstractions))
+                    SnapshotGenerator.ProgramAbstractions.Add(intCompExpr);
+            });
+        }
+    }
+
+    /// -------------------------
+    /// Utils
+    /// -------------------------
+    private bool ExprAlreadyCollected(Expression expr, List<Expression> collection) {
+        return collection.Find((e) => e.ToString() == expr.ToString()) != null;
     }
 }
