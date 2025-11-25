@@ -7,8 +7,7 @@ public class ExpressionScanner : Visitor
 {
     private readonly List<Expression> _defaultClassAbstractions = [];
     private readonly List<Expression> _integerExprs = [];
-    private readonly List<(string, string)> _allBoolArgumentlessPreds = [];
-    private readonly List<string> _usedObjectNames = [];
+    private readonly List<(string, Type, string)> _allArgumentlessPreds = []; // (scope, return type, predicate name)
     private bool _insideDefaultClass;
     private bool _insideFaultyTopLevelDecl;
     private string _currentTopLevelDecl = "";
@@ -61,16 +60,18 @@ public class ExpressionScanner : Visitor
     
     protected override void HandleFunction(Function function) {
         // collect argumentless boolean predicates
-        if (function.ResultType is BoolType && function.Ins.Count == 0 && function.Body != null) {
-            if (!_insideDefaultClass && _insideFaultyTopLevelDecl && 
-                !ExprAlreadyCollected(function.Body, SnapshotGenerator.ProgramAbstractions)) 
-            {
-                SnapshotGenerator.ProgramAbstractions.Add(function.Body);
-            } else if (!ExprAlreadyCollected(function.Body, _defaultClassAbstractions)) {
-                _defaultClassAbstractions.Add(function.Body);
+        if (function.Ins.Count == 0 && function.Body != null) {
+            if (function.ResultType is BoolType) {
+                if (!_insideDefaultClass && _insideFaultyTopLevelDecl &&
+                    !ExprAlreadyCollected(function.Body, SnapshotGenerator.ProgramAbstractions)) {
+                    SnapshotGenerator.ProgramAbstractions.Add(function.Body);
+                } else if (!ExprAlreadyCollected(function.Body, _defaultClassAbstractions)) {
+                    _defaultClassAbstractions.Add(function.Body);
+                }
             }
-            // argumentless boolean predicates callable by objects of type _currentTopLevelDecl
-            _allBoolArgumentlessPreds.Add((_currentTopLevelDecl, function.Name));
+            
+            // argumentless predicates callable by objects of type _currentTopLevelDecl
+            _allArgumentlessPreds.Add((_currentTopLevelDecl, function.ResultType, function.Name));
         }
     }
     
@@ -87,11 +88,8 @@ public class ExpressionScanner : Visitor
 
     protected override void HandleExpression(Expression expr) {
         CollectExpressions(expr);
+        CollectArgumentlessCalls(expr);
         base.HandleExpression(expr);
-    }
-    
-    protected override void VisitExpression(NameSegment nSegExpr) {
-        CollectBoolArgumentlessCalls(nSegExpr.Origin, nSegExpr.Type, nSegExpr.Name);
     }
 
     /// -------------------------
@@ -103,30 +101,31 @@ public class ExpressionScanner : Visitor
         if ((expr.Type is IntType || (expr.Type is UserDefinedType intUType && intUType.Name == "nat")) 
             && !ExprAlreadyCollected(expr, _integerExprs))
             _integerExprs.Add(expr);
-        if (expr.Type is UserDefinedType uType && uType.Name[^1] == '?') {
-            if (expr is LiteralExpr lExpr && lExpr.Value == null)
-                return;
-            var nullLiteral = new LiteralExpr(expr.Origin, null);
-            var nullCompExpr = new BinaryExpr(expr.Origin, BinaryExpr.Opcode.Eq, expr, nullLiteral);
-            if (!ExprAlreadyCollected(nullCompExpr, SnapshotGenerator.ProgramAbstractions))
-                SnapshotGenerator.ProgramAbstractions.Add(nullCompExpr);
-        }
+        if (expr.Type is UserDefinedType uType && uType.Name[^1] == '?')
+            CollectBoolExprFromNullableRef(expr);
     }
-    
-    private void CollectBoolArgumentlessCalls(IOrigin origin, Type type, string objectName) {
-        if (!(type is UserDefinedType) || _usedObjectNames.Contains(objectName)) 
+
+    private void CollectArgumentlessCalls(Expression expr) {
+        if (!(expr.Type is UserDefinedType))
             return;
-        var applicablePreds = _allBoolArgumentlessPreds.Where(
-            (pred) => pred.Item1 == type.ToString()
+        
+        var applicablePreds = _allArgumentlessPreds.Where(
+            (pred) => pred.Item1 == expr.Type.ToString()
         );
         foreach (var pred in applicablePreds) {
-            var lhs = new NameSegment(origin, objectName, null);
-            var suffixName = new Name(pred.Item2);
-            var callExpr = new ExprDotName(origin, lhs, suffixName, null);
-            if (!ExprAlreadyCollected(callExpr, SnapshotGenerator.ProgramAbstractions))
-                SnapshotGenerator.ProgramAbstractions.Add(callExpr);
+            var suffixName = new Name(pred.Item3);
+            var callExpr = new ExprDotName(expr.Origin, expr, suffixName, null);
+            
+            if (pred.Item2 is BoolType) {
+                if (!ExprAlreadyCollected(callExpr, SnapshotGenerator.ProgramAbstractions))
+                    SnapshotGenerator.ProgramAbstractions.Add(callExpr);
+            } else if (pred.Item2 is IntType || (pred.Item2 is UserDefinedType intUType && intUType.Name == "nat")) {
+                if (!ExprAlreadyCollected(callExpr, _integerExprs))
+                    _integerExprs.Add(callExpr);
+            } else if (pred.Item2 is UserDefinedType uType && uType.Name[^1] == '?') {
+                CollectBoolExprFromNullableRef(callExpr);
+            }
         }
-        _usedObjectNames.Add(objectName);
     }
 
     private void CollectBoolExprsFromIntegers() {
@@ -154,6 +153,15 @@ public class ExpressionScanner : Visitor
                     SnapshotGenerator.ProgramAbstractions.Add(intCompExpr);
             });
         }
+    }
+
+    private void CollectBoolExprFromNullableRef(Expression expr) {
+        if (expr is LiteralExpr lExpr && lExpr.Value == null)
+            return;
+        var nullLiteral = new LiteralExpr(expr.Origin, null);
+        var nullCompExpr = new BinaryExpr(expr.Origin, BinaryExpr.Opcode.Eq, expr, nullLiteral);
+        if (!ExprAlreadyCollected(nullCompExpr, SnapshotGenerator.ProgramAbstractions))
+            SnapshotGenerator.ProgramAbstractions.Add(nullCompExpr);
     }
 
     /// -------------------------
