@@ -106,7 +106,7 @@ public class ExpressionScanner : Visitor
     }
 
     private void CollectArgumentlessCalls(Expression expr) {
-        if (!(expr.Type is UserDefinedType))
+        if (!(expr.Type is UserDefinedType) || expr is ThisExpr)
             return;
         
         var applicablePreds = _allArgumentlessPreds.Where(
