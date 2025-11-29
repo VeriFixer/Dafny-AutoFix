@@ -84,12 +84,19 @@ public class ExpressionScanner : Visitor
             return;
         base.HandleMethod(faultyMethod);
         CollectBoolExprsFromIntegers();
+        CollectExprsComplements();
     }
 
     protected override void HandleExpression(Expression expr) {
         CollectExpressions(expr);
         CollectArgumentlessCalls(expr);
         base.HandleExpression(expr);
+    }
+    
+    protected override void VisitExpression(BinaryExpr bExpr) {
+        if (bExpr.Op == BinaryExpr.Opcode.Imp)
+            CollectImpliesMutations(bExpr);
+        base.VisitExpression(bExpr);
     }
 
     /// -------------------------
@@ -162,6 +169,27 @@ public class ExpressionScanner : Visitor
         var nullCompExpr = new BinaryExpr(expr.Origin, BinaryExpr.Opcode.Eq, expr, nullLiteral);
         if (!ExprAlreadyCollected(nullCompExpr, SnapshotGenerator.ProgramAbstractions))
             SnapshotGenerator.ProgramAbstractions.Add(nullCompExpr);
+    }
+
+    private void CollectImpliesMutations(BinaryExpr bExpr) { // bExpr = a ==> b
+        Expression mutation = new UnaryOpExpr(bExpr.Origin, UnaryOpExpr.Opcode.Not, bExpr); 
+        if (!ExprAlreadyCollected(mutation, SnapshotGenerator.ProgramAbstractions))
+            SnapshotGenerator.ProgramAbstractions.Add(mutation); // not a ==> b
+        var negateConsequent = new UnaryOpExpr(bExpr.E1.Origin, UnaryOpExpr.Opcode.Not, bExpr.E1);
+        mutation = new BinaryExpr(bExpr.Origin, BinaryExpr.Opcode.Imp, bExpr.E0, negateConsequent);
+        if (!ExprAlreadyCollected(mutation, SnapshotGenerator.ProgramAbstractions))
+            SnapshotGenerator.ProgramAbstractions.Add(mutation); // a ==> not b
+        mutation = new BinaryExpr(bExpr.Origin, BinaryExpr.Opcode.Imp, bExpr.E1, bExpr.E0);
+        if (!ExprAlreadyCollected(mutation, SnapshotGenerator.ProgramAbstractions))
+            SnapshotGenerator.ProgramAbstractions.Add(mutation); // b ==> a
+    }
+
+    private void CollectExprsComplements() {
+        foreach (var expr in SnapshotGenerator.ProgramAbstractions.ToList()) {
+            var complement = new UnaryOpExpr(expr.Origin, UnaryOpExpr.Opcode.Not,  expr);
+            if (!ExprAlreadyCollected(complement, SnapshotGenerator.ProgramAbstractions))
+                SnapshotGenerator.ProgramAbstractions.Add(complement);
+        }
     }
 
     /// -------------------------
