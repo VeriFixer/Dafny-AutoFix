@@ -62,11 +62,10 @@ public class ExpressionScanner : Visitor
         // collect argumentless boolean predicates
         if (function.Ins.Count == 0 && function.Body != null) {
             if (function.ResultType is BoolType) {
-                if (!_insideDefaultClass && _insideFaultyTopLevelDecl &&
-                    !ExprAlreadyCollected(function.Body, SnapshotGenerator.ProgramAbstractions)) {
-                    SnapshotGenerator.ProgramAbstractions.Add(function.Body);
-                } else if (!ExprAlreadyCollected(function.Body, _defaultClassAbstractions)) {
-                    _defaultClassAbstractions.Add(function.Body);
+                if (!_insideDefaultClass && _insideFaultyTopLevelDecl) {
+                    AddExpression(function.Body, SnapshotGenerator.ProgramAbstractions);
+                } else {
+                    AddExpression(function.Body, _defaultClassAbstractions);
                 }
             }
             
@@ -103,11 +102,10 @@ public class ExpressionScanner : Visitor
     /// Expression collection
     /// -------------------------
     private void CollectExpressions(Expression expr) {
-        if (expr.Type is BoolType && !ExprAlreadyCollected(expr, SnapshotGenerator.ProgramAbstractions))
-            SnapshotGenerator.ProgramAbstractions.Add(expr);
-        if ((expr.Type is IntType || (expr.Type is UserDefinedType intUType && intUType.Name == "nat")) 
-            && !ExprAlreadyCollected(expr, _integerExprs))
-            _integerExprs.Add(expr);
+        if (expr.Type is BoolType)
+            AddExpression(expr, SnapshotGenerator.ProgramAbstractions);
+        if (expr.Type is IntType || (expr.Type is UserDefinedType intUType && intUType.Name == "nat"))
+            AddExpression(expr, _integerExprs);
         if (expr.Type is UserDefinedType uType && uType.Name[^1] == '?')
             CollectBoolExprFromNullableRef(expr);
     }
@@ -124,11 +122,9 @@ public class ExpressionScanner : Visitor
             var callExpr = new ExprDotName(expr.Origin, expr, suffixName, null);
             
             if (pred.Item2 is BoolType) {
-                if (!ExprAlreadyCollected(callExpr, SnapshotGenerator.ProgramAbstractions))
-                    SnapshotGenerator.ProgramAbstractions.Add(callExpr);
+                AddExpression(callExpr, SnapshotGenerator.ProgramAbstractions);
             } else if (pred.Item2 is IntType || (pred.Item2 is UserDefinedType intUType && intUType.Name == "nat")) {
-                if (!ExprAlreadyCollected(callExpr, _integerExprs))
-                    _integerExprs.Add(callExpr);
+                AddExpression(callExpr, _integerExprs);
             } else if (pred.Item2 is UserDefinedType uType && uType.Name[^1] == '?') {
                 CollectBoolExprFromNullableRef(callExpr);
             }
@@ -148,16 +144,14 @@ public class ExpressionScanner : Visitor
                 if (intExpr1 == intExpr2) continue;
                 ops.ForEach((o) => {
                     var intCompExpr = new BinaryExpr(intExpr1.Origin, o, intExpr1, intExpr2);
-                    if (!ExprAlreadyCollected(intCompExpr, SnapshotGenerator.ProgramAbstractions))
-                        SnapshotGenerator.ProgramAbstractions.Add(intCompExpr);
+                    AddExpression(intCompExpr, SnapshotGenerator.ProgramAbstractions);
                 });
             }
             
             if (containsZeroLiteral) continue;
             ops.ForEach((o) => {
                 var intCompExpr = new BinaryExpr(intExpr1.Origin, o, intExpr1, new LiteralExpr(intExpr1.Origin, 0));
-                if (!ExprAlreadyCollected(intCompExpr, SnapshotGenerator.ProgramAbstractions))
-                    SnapshotGenerator.ProgramAbstractions.Add(intCompExpr);
+                AddExpression(intCompExpr, SnapshotGenerator.ProgramAbstractions);
             });
         }
     }
@@ -167,34 +161,34 @@ public class ExpressionScanner : Visitor
             return;
         var nullLiteral = new LiteralExpr(expr.Origin, null);
         var nullCompExpr = new BinaryExpr(expr.Origin, BinaryExpr.Opcode.Eq, expr, nullLiteral);
-        if (!ExprAlreadyCollected(nullCompExpr, SnapshotGenerator.ProgramAbstractions))
-            SnapshotGenerator.ProgramAbstractions.Add(nullCompExpr);
+        AddExpression(nullCompExpr, SnapshotGenerator.ProgramAbstractions);
     }
 
     private void CollectImpliesMutations(BinaryExpr bExpr) { // bExpr = a ==> b
         Expression mutation = new UnaryOpExpr(bExpr.Origin, UnaryOpExpr.Opcode.Not, bExpr); 
-        if (!ExprAlreadyCollected(mutation, SnapshotGenerator.ProgramAbstractions))
-            SnapshotGenerator.ProgramAbstractions.Add(mutation); // not a ==> b
+        AddExpression(mutation, SnapshotGenerator.ProgramAbstractions); // not a ==> b
         var negateConsequent = new UnaryOpExpr(bExpr.E1.Origin, UnaryOpExpr.Opcode.Not, bExpr.E1);
         mutation = new BinaryExpr(bExpr.Origin, BinaryExpr.Opcode.Imp, bExpr.E0, negateConsequent);
-        if (!ExprAlreadyCollected(mutation, SnapshotGenerator.ProgramAbstractions))
-            SnapshotGenerator.ProgramAbstractions.Add(mutation); // a ==> not b
+        AddExpression(mutation, SnapshotGenerator.ProgramAbstractions); // a ==> not b
         mutation = new BinaryExpr(bExpr.Origin, BinaryExpr.Opcode.Imp, bExpr.E1, bExpr.E0);
-        if (!ExprAlreadyCollected(mutation, SnapshotGenerator.ProgramAbstractions))
-            SnapshotGenerator.ProgramAbstractions.Add(mutation); // b ==> a
+        AddExpression(mutation, SnapshotGenerator.ProgramAbstractions); // b ==> a
     }
 
     private void CollectExprsComplements() {
         foreach (var expr in SnapshotGenerator.ProgramAbstractions.ToList()) {
             var complement = new UnaryOpExpr(expr.Origin, UnaryOpExpr.Opcode.Not,  expr);
-            if (!ExprAlreadyCollected(complement, SnapshotGenerator.ProgramAbstractions))
-                SnapshotGenerator.ProgramAbstractions.Add(complement);
+            AddExpression(complement, SnapshotGenerator.ProgramAbstractions);
         }
     }
 
     /// -------------------------
     /// Utils
     /// -------------------------
+    private void AddExpression(Expression expr, List<Expression> collection) {
+        if (!ExprAlreadyCollected(expr, collection))
+            collection.Add(expr);
+    }
+    
     private bool ExprAlreadyCollected(Expression expr, List<Expression> collection) {
         return collection.Find((e) => e.ToString() == expr.ToString()) != null;
     }
