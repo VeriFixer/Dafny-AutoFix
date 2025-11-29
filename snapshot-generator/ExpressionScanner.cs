@@ -176,9 +176,32 @@ public class ExpressionScanner : Visitor
 
     private void CollectExprsComplements() {
         foreach (var expr in SnapshotGenerator.ProgramAbstractions.ToList()) {
-            var complement = new UnaryOpExpr(expr.Origin, UnaryOpExpr.Opcode.Not,  expr);
+            Expression? complement = null;
+            if (expr is BinaryExpr bExpr)
+                complement = CollectBinaryExprComplement(bExpr);
+            complement ??= CollectExprComplement(expr);
             AddExpression(complement, SnapshotGenerator.ProgramAbstractions);
         }
+    }
+
+    private BinaryExpr? CollectBinaryExprComplement(BinaryExpr bExpr) {
+        return bExpr.Op switch {
+            BinaryExpr.Opcode.Eq => new BinaryExpr(bExpr.Origin, BinaryExpr.Opcode.Neq, bExpr.E0, bExpr.E1),
+            BinaryExpr.Opcode.Neq => new BinaryExpr(bExpr.Origin, BinaryExpr.Opcode.Eq, bExpr.E0, bExpr.E1),
+            BinaryExpr.Opcode.Lt => new BinaryExpr(bExpr.Origin, BinaryExpr.Opcode.Ge, bExpr.E0, bExpr.E1),
+            BinaryExpr.Opcode.Le => new BinaryExpr(bExpr.Origin, BinaryExpr.Opcode.Gt, bExpr.E0, bExpr.E1),
+            BinaryExpr.Opcode.Gt => new BinaryExpr(bExpr.Origin, BinaryExpr.Opcode.Le, bExpr.E0, bExpr.E1),
+            BinaryExpr.Opcode.Ge => new BinaryExpr(bExpr.Origin, BinaryExpr.Opcode.Lt, bExpr.E0, bExpr.E1),
+            BinaryExpr.Opcode.In => new BinaryExpr(bExpr.Origin, BinaryExpr.Opcode.NotIn, bExpr.E0, bExpr.E1),
+            BinaryExpr.Opcode.NotIn => new BinaryExpr(bExpr.Origin, BinaryExpr.Opcode.In, bExpr.E0, bExpr.E1),
+            _ => null
+        };
+    }
+    
+    private Expression CollectExprComplement(Expression expr) {
+        if (expr is UnaryOpExpr uOpExpr && uOpExpr.Op == UnaryOpExpr.Opcode.Not)
+            return uOpExpr.E;
+        return new UnaryOpExpr(expr.Origin, UnaryOpExpr.Opcode.Not, expr);
     }
 
     /// -------------------------
