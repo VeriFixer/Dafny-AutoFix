@@ -165,9 +165,9 @@ public class ExpressionScanner : Visitor
     }
 
     private void CollectImpliesMutations(BinaryExpr bExpr) { // bExpr = a ==> b
-        Expression mutation = new UnaryOpExpr(bExpr.Origin, UnaryOpExpr.Opcode.Not, bExpr); 
+        Expression mutation = CreateExprComplement(bExpr); 
         AddExpression(mutation, SnapshotGenerator.ProgramAbstractions); // not a ==> b
-        var negateConsequent = new UnaryOpExpr(bExpr.E1.Origin, UnaryOpExpr.Opcode.Not, bExpr.E1);
+        var negateConsequent = CreateExprComplement(bExpr.E1);
         mutation = new BinaryExpr(bExpr.Origin, BinaryExpr.Opcode.Imp, bExpr.E0, negateConsequent);
         AddExpression(mutation, SnapshotGenerator.ProgramAbstractions); // a ==> not b
         mutation = new BinaryExpr(bExpr.Origin, BinaryExpr.Opcode.Imp, bExpr.E1, bExpr.E0);
@@ -179,7 +179,7 @@ public class ExpressionScanner : Visitor
             Expression? complement = null;
             if (expr is BinaryExpr bExpr)
                 complement = CollectBinaryExprComplement(bExpr);
-            complement ??= CollectExprComplement(expr);
+            complement ??= CreateExprComplement(expr);
             AddExpression(complement, SnapshotGenerator.ProgramAbstractions);
         }
     }
@@ -198,7 +198,7 @@ public class ExpressionScanner : Visitor
         };
     }
     
-    private Expression CollectExprComplement(Expression expr) {
+    private Expression CreateExprComplement(Expression expr) {
         if (expr is UnaryOpExpr uOpExpr && uOpExpr.Op == UnaryOpExpr.Opcode.Not)
             return uOpExpr.E;
         return new UnaryOpExpr(expr.Origin, UnaryOpExpr.Opcode.Not, expr);
