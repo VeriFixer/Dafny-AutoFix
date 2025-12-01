@@ -5,9 +5,10 @@ namespace SnapshotGenerator;
 
 public class ExpressionScanner : Visitor
 {
+    public List<(string, int?, int?)> IdentifierAvailability { get; } = []; // (name, position where availability starts, position where availability ends)
     private readonly List<Expression> _integerExprs = [];
     private readonly List<(string, Type, string)> _allArgumentlessPreds = []; // (scope, return type, predicate name)
-    private readonly List<(string, int?, int?)> _nameSegmentAvailability = []; // (name, position where availability starts, position where availability ends)
+    
     private bool _insideDefaultClass;
     private bool _insideFaultyTopLevelDecl;
     private string _currentTopLevelDecl = "";
@@ -45,7 +46,7 @@ public class ExpressionScanner : Visitor
                 HandleFunction(func);
             } else if (member is Field f) {
                 if (_insideDefaultClass || _insideFaultyTopLevelDecl)
-                    _nameSegmentAvailability.Add((f.Name, null, null));
+                    IdentifierAvailability.Add((f.Name, null, null));
             }
         }
         _insideFaultyTopLevelDecl = false;
@@ -80,9 +81,9 @@ public class ExpressionScanner : Visitor
             return;
 
         foreach (var input in faultyMethod.Ins)
-            _nameSegmentAvailability.Add((input.Name, faultyMethod.StartToken.pos, faultyMethod.EndToken.pos));
+            IdentifierAvailability.Add((input.Name, faultyMethod.StartToken.pos, faultyMethod.EndToken.pos));
         foreach (var output in faultyMethod.Outs)
-            _nameSegmentAvailability.Add((output.Name, faultyMethod.StartToken.pos, faultyMethod.EndToken.pos));
+            IdentifierAvailability.Add((output.Name, faultyMethod.StartToken.pos, faultyMethod.EndToken.pos));
         
         base.HandleMethod(faultyMethod);
         CollectBoolExprsFromIntegers();
@@ -98,7 +99,7 @@ public class ExpressionScanner : Visitor
     
     protected override void VisitStatement(VarDeclStmt vDeclStmt) {
         foreach (var lhs in vDeclStmt.Locals) {
-            _nameSegmentAvailability.Add((lhs.Name, lhs.EndToken.pos, _currentScopeLimit));
+            IdentifierAvailability.Add((lhs.Name, lhs.EndToken.pos, _currentScopeLimit));
         }
         base.VisitStatement(vDeclStmt);
     }
