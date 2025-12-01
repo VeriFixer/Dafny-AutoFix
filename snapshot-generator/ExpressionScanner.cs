@@ -5,14 +5,13 @@ namespace SnapshotGenerator;
 
 public class ExpressionScanner : Visitor
 {
-    private readonly List<Expression> _defaultClassAbstractions = [];
     private readonly List<Expression> _integerExprs = [];
     private readonly List<(string, Type, string)> _allArgumentlessPreds = []; // (scope, return type, predicate name)
-    private readonly List<(string, int)> _nameSegmentAvailability = []; // (name, position where availability starts)
-    private readonly List<(string, int)> _defaultClassFieldsAvailability = [];
+    private readonly List<(string, int?, int?)> _nameSegmentAvailability = []; // (name, position where availability starts, position where availability ends)
     private bool _insideDefaultClass;
     private bool _insideFaultyTopLevelDecl;
     private string _currentTopLevelDecl = "";
+    private int _currentScopeLimit;
     
     /// -------------------------
     /// General AST node visitors
@@ -20,15 +19,9 @@ public class ExpressionScanner : Visitor
     protected override void HandleDefaultClassDecl(ModuleDefinition module) {
         if (module.DefaultClass == null) return;
         
-        var prevFaultyMethodFound = SnapshotGenerator.FaultyMethod != null;
         _insideDefaultClass = true;
         HandleMemberDecls(module.DefaultClass); // requires visit to determine if it includes faulty method
         _insideDefaultClass = false;
-
-        if (!prevFaultyMethodFound && SnapshotGenerator.FaultyMethod != null) { // includes faulty method
-            SnapshotGenerator.ProgramAbstractions.AddRange(_defaultClassAbstractions);
-            _nameSegmentAvailability.AddRange(_defaultClassFieldsAvailability);
-        }
     }
     
     protected override void HandleSourceDecls(ModuleDefinition module) {
@@ -51,11 +44,8 @@ public class ExpressionScanner : Visitor
             } else if (member is Function func) { // includes predicate
                 HandleFunction(func);
             } else if (member is Field f) {
-                if (_insideFaultyTopLevelDecl) {
-                    _nameSegmentAvailability.Add((f.Name, f.EndToken.pos));
-                } else {
-                    _defaultClassFieldsAvailability.Add((f.Name, f.EndToken.pos));
-                }
+                if (_insideDefaultClass || _insideFaultyTopLevelDecl)
+                    _nameSegmentAvailability.Add((f.Name, null, null));
             }
         }
         _insideFaultyTopLevelDecl = false;
@@ -72,11 +62,8 @@ public class ExpressionScanner : Visitor
         // collect argumentless boolean predicates
         if (function.Ins.Count == 0 && function.Body != null) {
             if (function.ResultType is BoolType) {
-                if (!_insideDefaultClass && _insideFaultyTopLevelDecl) {
+                if (_insideDefaultClass || _insideFaultyTopLevelDecl)
                     AddExpression(function.Body, SnapshotGenerator.ProgramAbstractions);
-                } else {
-                    AddExpression(function.Body, _defaultClassAbstractions);
-                }
             }
             
             // argumentless predicates callable by objects of type _currentTopLevelDecl
@@ -93,18 +80,25 @@ public class ExpressionScanner : Visitor
             return;
 
         foreach (var input in faultyMethod.Ins)
-            _nameSegmentAvailability.Add((input.Name, faultyMethod.StartToken.pos));
+            _nameSegmentAvailability.Add((input.Name, faultyMethod.StartToken.pos, faultyMethod.EndToken.pos));
         foreach (var output in faultyMethod.Outs)
-            _nameSegmentAvailability.Add((output.Name, faultyMethod.StartToken.pos));
+            _nameSegmentAvailability.Add((output.Name, faultyMethod.StartToken.pos, faultyMethod.EndToken.pos));
         
         base.HandleMethod(faultyMethod);
         CollectBoolExprsFromIntegers();
         CollectExprsComplements();
     }
     
+    protected override void HandleBlock(BlockStmt blockStmt) {
+        var prevScope = _currentScopeLimit;
+        _currentScopeLimit = blockStmt.EndToken.pos;
+        base.HandleBlock(blockStmt);
+        _currentScopeLimit = prevScope;
+    }
+    
     protected override void VisitStatement(VarDeclStmt vDeclStmt) {
         foreach (var lhs in vDeclStmt.Locals) {
-            _nameSegmentAvailability.Add((lhs.Name, lhs.EndToken.pos));
+            _nameSegmentAvailability.Add((lhs.Name, lhs.EndToken.pos, _currentScopeLimit));
         }
         base.VisitStatement(vDeclStmt);
     }
