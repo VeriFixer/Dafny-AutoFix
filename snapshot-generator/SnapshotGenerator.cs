@@ -32,6 +32,7 @@ public class SnapshotGenerator : Rewriter
     private readonly ExpressionScanner _scanner = new();
 
     public SnapshotGenerator(ErrorReporter reporter, int violationLine, int violationColumn) : base(reporter) {
+        FaultyMethod = null;
         ViolationLine = violationLine;
         ViolationColumn = violationColumn;
     }

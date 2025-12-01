@@ -8,6 +8,8 @@ public class ExpressionScanner : Visitor
     private readonly List<Expression> _defaultClassAbstractions = [];
     private readonly List<Expression> _integerExprs = [];
     private readonly List<(string, Type, string)> _allArgumentlessPreds = []; // (scope, return type, predicate name)
+    private readonly List<(string, int)> _nameSegmentAvailability = []; // (name, position where availability starts)
+    private readonly List<(string, int)> _defaultClassFieldsAvailability = [];
     private bool _insideDefaultClass;
     private bool _insideFaultyTopLevelDecl;
     private string _currentTopLevelDecl = "";
@@ -18,13 +20,15 @@ public class ExpressionScanner : Visitor
     protected override void HandleDefaultClassDecl(ModuleDefinition module) {
         if (module.DefaultClass == null) return;
         
-        var faultyMethodFound = SnapshotGenerator.FaultyMethod != null;
+        var prevFaultyMethodFound = SnapshotGenerator.FaultyMethod != null;
         _insideDefaultClass = true;
         HandleMemberDecls(module.DefaultClass); // requires visit to determine if it includes faulty method
         _insideDefaultClass = false;
 
-        if (!faultyMethodFound && SnapshotGenerator.FaultyMethod != null) // includes faulty method
+        if (!prevFaultyMethodFound && SnapshotGenerator.FaultyMethod != null) { // includes faulty method
             SnapshotGenerator.ProgramAbstractions.AddRange(_defaultClassAbstractions);
+            _nameSegmentAvailability.AddRange(_defaultClassFieldsAvailability);
+        }
     }
     
     protected override void HandleSourceDecls(ModuleDefinition module) {
@@ -46,6 +50,12 @@ public class ExpressionScanner : Visitor
                 HandleMethod(m);  
             } else if (member is Function func) { // includes predicate
                 HandleFunction(func);
+            } else if (member is Field f) {
+                if (_insideFaultyTopLevelDecl) {
+                    _nameSegmentAvailability.Add((f.Name, f.EndToken.pos));
+                } else {
+                    _defaultClassFieldsAvailability.Add((f.Name, f.EndToken.pos));
+                }
             }
         }
         _insideFaultyTopLevelDecl = false;
@@ -81,9 +91,22 @@ public class ExpressionScanner : Visitor
         var faultyMethod = SnapshotGenerator.FaultyMethod;
         if (faultyMethod == null)
             return;
+
+        foreach (var input in faultyMethod.Ins)
+            _nameSegmentAvailability.Add((input.Name, faultyMethod.StartToken.pos));
+        foreach (var output in faultyMethod.Outs)
+            _nameSegmentAvailability.Add((output.Name, faultyMethod.StartToken.pos));
+        
         base.HandleMethod(faultyMethod);
         CollectBoolExprsFromIntegers();
         CollectExprsComplements();
+    }
+    
+    protected override void VisitStatement(VarDeclStmt vDeclStmt) {
+        foreach (var lhs in vDeclStmt.Locals) {
+            _nameSegmentAvailability.Add((lhs.Name, lhs.EndToken.pos));
+        }
+        base.VisitStatement(vDeclStmt);
     }
 
     protected override void HandleExpression(Expression expr) {
