@@ -42,14 +42,24 @@ public class SnapshotGenerator : Rewriter
     }
 
     public override void PostResolve(ModuleDefinition module) {
+        if (FaultyMethod == null) return;
         // collect additional predicates from faulty method after fully parsing the AST
         _scanner.VisitFaultyMethod();
 
-        if (FaultyMethod == null) return;
-        using StreamWriter sw = File.AppendText("abstractions.txt");
-        foreach (var expr in ProgramAbstractions) {
-            var line = expr.ToString();
-            sw.WriteLine(line);
-        }
+        // instrument the program for collecting predicates values at runtime
+        var expressionTraceBuilder = new ExpressionTraceBuilder(_scanner.IdentifierAvailability);
+        expressionTraceBuilder.InstrumentFaultyMethod();
+    }
+    
+    public override void PostResolve(Program program) {
+        // save instrumented program
+        var stringWriter = new StringWriter();
+        var printer = new Printer(stringWriter, program.Options, PrintModes.Serialization);
+        printer.PrintProgram(program, false);
+        var programText = stringWriter.ToString();
+
+        var filename = Path.GetFileNameWithoutExtension(program.Name);
+        filename += "_instrumented.dfy";
+        File.WriteAllText(filename, programText);
     }
 }

@@ -52,6 +52,7 @@ public abstract class Visitor
             {typeof(NegationExpression), expr => VisitExpression((expr as NegationExpression)!)},
             {typeof(ChainingExpression), expr => VisitExpression((expr as ChainingExpression)!)},
             {typeof(NameSegment), expr => VisitExpression((expr as NameSegment)!)},
+            {typeof(IdentifierExpr), expr => VisitExpression((expr as IdentifierExpr)!)},
             {typeof(LetExpr), expr => VisitExpression((expr as LetExpr)!)},
             {typeof(LetOrFailExpr), expr => VisitExpression((expr as LetOrFailExpr)!)},
             {typeof(ApplyExpr), expr => VisitExpression((expr as ApplyExpr)!)},
@@ -378,6 +379,8 @@ public abstract class Visitor
     // no sub-expressions to further visit
     protected virtual void VisitExpression(NameSegment nSegExpr) { }
 
+    protected virtual void VisitExpression(IdentifierExpr idExpr) { }
+    
     protected virtual void VisitExpression(LetExpr ltExpr) {
         var exprs = Enumerable.Concat([ltExpr.Body], ltExpr.RHSs).ToList();
         HandleExprList(exprs);
