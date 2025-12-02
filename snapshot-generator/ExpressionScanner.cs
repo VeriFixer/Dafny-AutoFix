@@ -82,9 +82,6 @@ public class ExpressionScanner : Visitor
 
         foreach (var input in faultyMethod.Ins)
             IdentifierAvailability.Add((input.Name, faultyMethod.StartToken.pos, faultyMethod.EndToken.pos));
-        foreach (var output in faultyMethod.Outs)
-            IdentifierAvailability.Add((output.Name, faultyMethod.StartToken.pos, faultyMethod.EndToken.pos));
-        
         base.HandleMethod(faultyMethod);
         CollectBoolExprsFromIntegers();
         CollectExprsComplements();
@@ -95,6 +92,15 @@ public class ExpressionScanner : Visitor
         _currentScopeLimit = blockStmt.EndToken.pos;
         base.HandleBlock(blockStmt);
         _currentScopeLimit = prevScope;
+    }
+    
+    protected override void VisitStatement(ConcreteAssignStatement cAStmt) {
+        foreach (var lhs in cAStmt.Lhss) {
+            if (IdentifierAvailability.Count(id => id.Item1 == lhs.ToString()) > 0)
+                continue;
+            IdentifierAvailability.Add((lhs.ToString(), lhs.EndToken.pos, _currentScopeLimit));
+        }
+        base.VisitStatement(cAStmt);
     }
     
     protected override void VisitStatement(VarDeclStmt vDeclStmt) {
