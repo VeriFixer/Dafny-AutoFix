@@ -162,39 +162,43 @@ public class ExpressionScanner : Visitor
                 containsZeroLiteral = true;
         }
         
-        List<BinaryExpr.Opcode> ops = [BinaryExpr.Opcode.Eq, BinaryExpr.Opcode.Lt, BinaryExpr.Opcode.Le];
         foreach (var intExpr1 in _integerExprs) {
             foreach (var intExpr2 in _integerExprs) {
                 if (intExpr1 == intExpr2) continue;
-                ops.ForEach((o) => {
-                    var intCompExpr = new BinaryExpr(intExpr1.Origin, o, intExpr1, intExpr2);
-                    AddExpression(intCompExpr, SnapshotGenerator.ProgramAbstractions);
-                });
+                CollectBoolExprsFromIntegers(intExpr1, intExpr2);
             }
             
             if (containsZeroLiteral) continue;
-            ops.ForEach((o) => {
-                var intCompExpr = new BinaryExpr(intExpr1.Origin, o, intExpr1, new LiteralExpr(intExpr1.Origin, 0));
-                AddExpression(intCompExpr, SnapshotGenerator.ProgramAbstractions);
-            });
+            var zeroLiteral = Expression.CreateIntLiteral(intExpr1.Origin, 0);
+            CollectBoolExprsFromIntegers(intExpr1, zeroLiteral);
         }
+    }
+    
+    private void CollectBoolExprsFromIntegers(Expression intExpr1, Expression intExpr2) {
+        var intCompExpr = Expression.CreateEq(intExpr1, intExpr2, Type.Int);
+        AddExpression(intCompExpr, SnapshotGenerator.ProgramAbstractions);
+        intCompExpr = Expression.CreateLess(intExpr1, intExpr2);
+        AddExpression(intCompExpr, SnapshotGenerator.ProgramAbstractions);
+        intCompExpr = Expression.CreateAtMost(intExpr1, intExpr2);
+        AddExpression(intCompExpr, SnapshotGenerator.ProgramAbstractions);
     }
 
     private void CollectBoolExprFromNullableRef(Expression expr) {
         if (expr is LiteralExpr lExpr && lExpr.Value == null)
             return;
         var nullLiteral = new LiteralExpr(expr.Origin, null);
-        var nullCompExpr = new BinaryExpr(expr.Origin, BinaryExpr.Opcode.Eq, expr, nullLiteral);
+        nullLiteral.Type = expr.Type; // expression should be resolved to avoid errors
+        var nullCompExpr = Expression.CreateEq(expr, nullLiteral, expr.Type);
         AddExpression(nullCompExpr, SnapshotGenerator.ProgramAbstractions);
     }
 
     private void CollectImpliesMutations(BinaryExpr bExpr) { // bExpr = a ==> b
-        Expression mutation = CreateExprComplement(bExpr); 
+        Expression mutation = CreateExprComplement(bExpr);
         AddExpression(mutation, SnapshotGenerator.ProgramAbstractions); // not a ==> b
         var negateConsequent = CreateExprComplement(bExpr.E1);
-        mutation = new BinaryExpr(bExpr.Origin, BinaryExpr.Opcode.Imp, bExpr.E0, negateConsequent);
+        mutation = Expression.CreateImplies(bExpr.E0, negateConsequent, false);
         AddExpression(mutation, SnapshotGenerator.ProgramAbstractions); // a ==> not b
-        mutation = new BinaryExpr(bExpr.Origin, BinaryExpr.Opcode.Imp, bExpr.E1, bExpr.E0);
+        mutation = Expression.CreateImplies(bExpr.E1, bExpr.E0, false);
         AddExpression(mutation, SnapshotGenerator.ProgramAbstractions); // b ==> a
     }
 
@@ -208,16 +212,16 @@ public class ExpressionScanner : Visitor
         }
     }
 
-    private BinaryExpr? CollectBinaryExprComplement(BinaryExpr bExpr) {
+    private Expression? CollectBinaryExprComplement(BinaryExpr bExpr) {
         return bExpr.Op switch {
-            BinaryExpr.Opcode.Eq => new BinaryExpr(bExpr.Origin, BinaryExpr.Opcode.Neq, bExpr.E0, bExpr.E1),
-            BinaryExpr.Opcode.Neq => new BinaryExpr(bExpr.Origin, BinaryExpr.Opcode.Eq, bExpr.E0, bExpr.E1),
-            BinaryExpr.Opcode.Lt => new BinaryExpr(bExpr.Origin, BinaryExpr.Opcode.Ge, bExpr.E0, bExpr.E1),
-            BinaryExpr.Opcode.Le => new BinaryExpr(bExpr.Origin, BinaryExpr.Opcode.Gt, bExpr.E0, bExpr.E1),
-            BinaryExpr.Opcode.Gt => new BinaryExpr(bExpr.Origin, BinaryExpr.Opcode.Le, bExpr.E0, bExpr.E1),
-            BinaryExpr.Opcode.Ge => new BinaryExpr(bExpr.Origin, BinaryExpr.Opcode.Lt, bExpr.E0, bExpr.E1),
-            BinaryExpr.Opcode.In => new BinaryExpr(bExpr.Origin, BinaryExpr.Opcode.NotIn, bExpr.E0, bExpr.E1),
-            BinaryExpr.Opcode.NotIn => new BinaryExpr(bExpr.Origin, BinaryExpr.Opcode.In, bExpr.E0, bExpr.E1),
+            BinaryExpr.Opcode.Eq => CreateNeq(bExpr.E0, bExpr.E1, bExpr.E0.Type),
+            BinaryExpr.Opcode.Neq => Expression.CreateEq(bExpr.E0, bExpr.E1, bExpr.E0.Type),
+            BinaryExpr.Opcode.Lt => CreateAtLeast(bExpr.E0, bExpr.E1),
+            BinaryExpr.Opcode.Le => CreateGreater(bExpr.E0, bExpr.E1),
+            BinaryExpr.Opcode.Gt => Expression.CreateAtMost(bExpr.E0, bExpr.E1),
+            BinaryExpr.Opcode.Ge => Expression.CreateLess(bExpr.E0, bExpr.E1),
+            BinaryExpr.Opcode.In => CreateIn(bExpr.E0, bExpr.E1, bExpr.E0.Type),
+            BinaryExpr.Opcode.NotIn => CreateNotIn(bExpr.E0, bExpr.E1, bExpr.E0.Type),
             _ => null
         };
     }
@@ -225,7 +229,75 @@ public class ExpressionScanner : Visitor
     private Expression CreateExprComplement(Expression expr) {
         if (expr is UnaryOpExpr uOpExpr && uOpExpr.Op == UnaryOpExpr.Opcode.Not)
             return uOpExpr.E;
-        return new UnaryOpExpr(expr.Origin, UnaryOpExpr.Opcode.Not, expr);
+        var complement = new UnaryOpExpr(expr.Origin, UnaryOpExpr.Opcode.Not, expr) {
+            Type = Type.Bool
+        };
+        return complement;
+    }
+    
+    /// -----------------------------------------------------
+    /// My version of the (missing) static methods of Dafny's
+    /// Expression class for creating resolved expressions
+    /// -----------------------------------------------------
+    public static Expression CreateNeq(Expression e0, Expression e1, Type ty) {
+        var neq = new BinaryExpr(e0.Origin, BinaryExpr.Opcode.Neq, e0, e1);
+        if (ty is SetType) {
+            neq.ResolvedOp = BinaryExpr.ResolvedOpcode.SetNeq;
+        } else if (ty is SeqType) {
+            neq.ResolvedOp = BinaryExpr.ResolvedOpcode.SeqNeq;
+        } else if (ty is MultiSetType) {
+            neq.ResolvedOp = BinaryExpr.ResolvedOpcode.MultiSetNeq;
+        } else if (ty is MapType) {
+            neq.ResolvedOp = BinaryExpr.ResolvedOpcode.MapNeq;
+        } else {
+            neq.ResolvedOp = BinaryExpr.ResolvedOpcode.NeqCommon;
+        }
+        neq.Type = Type.Bool;
+        return neq;
+    }
+    
+    public static Expression CreateGreater(Expression e0, Expression e1) {
+        return new BinaryExpr(e0.Origin, BinaryExpr.Opcode.Gt, e0, e1) {
+            ResolvedOp = e0.Type.IsCharType ? BinaryExpr.ResolvedOpcode.GtChar : BinaryExpr.ResolvedOpcode.Gt,
+            Type = Type.Bool
+        };
+    }
+    
+    public static Expression CreateAtLeast(Expression e0, Expression e1) {
+        return new BinaryExpr(e0.Origin, BinaryExpr.Opcode.Ge, e0, e1) {
+            ResolvedOp = e0.Type.IsCharType ? BinaryExpr.ResolvedOpcode.GeChar : BinaryExpr.ResolvedOpcode.Ge,
+            Type = Type.Bool
+        };
+    }
+    
+    public static Expression CreateIn(Expression e0, Expression e1, Type ty) {
+        var inExpr = new BinaryExpr(e0.Origin, BinaryExpr.Opcode.In, e0, e1);
+        if (ty is SetType) {
+            inExpr.ResolvedOp = BinaryExpr.ResolvedOpcode.InSet;
+        } else if (ty is SeqType) {
+            inExpr.ResolvedOp = BinaryExpr.ResolvedOpcode.InSeq;
+        } else if (ty is MultiSetType) {
+            inExpr.ResolvedOp = BinaryExpr.ResolvedOpcode.InMultiSet;
+        } else if (ty is MapType) {
+            inExpr.ResolvedOp = BinaryExpr.ResolvedOpcode.InMap;
+        }
+        inExpr.Type = Type.Bool;
+        return inExpr;
+    }
+    
+    public static Expression CreateNotIn(Expression e0, Expression e1, Type ty) {
+        var notInExpr = new BinaryExpr(e0.Origin, BinaryExpr.Opcode.NotIn, e0, e1);
+        if (ty is SetType) {
+            notInExpr.ResolvedOp = BinaryExpr.ResolvedOpcode.NotInSet;
+        } else if (ty is SeqType) {
+            notInExpr.ResolvedOp = BinaryExpr.ResolvedOpcode.NotInSeq;
+        } else if (ty is MultiSetType) {
+            notInExpr.ResolvedOp = BinaryExpr.ResolvedOpcode.NotInMultiSet;
+        } else if (ty is MapType) {
+            notInExpr.ResolvedOp = BinaryExpr.ResolvedOpcode.NotInMap;
+        }
+        notInExpr.Type = Type.Bool;
+        return notInExpr;
     }
 
     /// -------------------------

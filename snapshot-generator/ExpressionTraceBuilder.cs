@@ -62,10 +62,10 @@ public sealed class ExpressionTraceBuilder : Visitor
         );
         
         foreach (var expr in availableExprs) {
-            var posElement = new LiteralExpr(token, token.pos);
-            var exprStrElement = new StringLiteralExpr(token, expr.Item1.ToString(), false);
-            var delimElement1 = new StringLiteralExpr(token, ",", false);
-            var delimElement2 = new StringLiteralExpr(token, "\\n", false);
+            var posElement = Expression.CreateIntLiteral(token, token.pos);
+            var exprStrElement = Expression.CreateStringLiteral(token, expr.Item1.ToString());
+            var delimElement1 = Expression.CreateStringLiteral(token, ",");
+            var delimElement2 = Expression.CreateStringLiteral(token, "\\n");
             List<Expression> printElements = [
                 posElement, delimElement1, exprStrElement, delimElement1, expr.Item1, delimElement2
             ];
