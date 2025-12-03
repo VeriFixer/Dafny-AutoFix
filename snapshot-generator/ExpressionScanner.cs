@@ -300,6 +300,12 @@ public class ExpressionScanner : Visitor
         return notInExpr;
     }
 
+    public static Expression CreateStringLiteral(IOrigin token, string s) {
+        var stringLit = (StringLiteralExpr)Expression.CreateStringLiteral(token, s);
+        stringLit.IsVerbatim = false;
+        return stringLit;
+    } 
+
     /// -------------------------
     /// Utils
     /// -------------------------
