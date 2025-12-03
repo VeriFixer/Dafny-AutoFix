@@ -47,7 +47,7 @@ public class SnapshotGenerator : Rewriter
         _scanner.VisitFaultyMethod();
 
         // instrument the program for collecting predicates values at runtime
-        var expressionTraceBuilder = new ExpressionTraceBuilder(_scanner.IdentifierAvailability);
+        var expressionTraceBuilder = new ExpressionTraceBuilder(_scanner.IdentifierAvailability, _scanner.Ghosts);
         expressionTraceBuilder.InstrumentFaultyMethod();
     }
     

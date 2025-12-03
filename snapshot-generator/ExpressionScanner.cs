@@ -6,6 +6,7 @@ namespace SnapshotGenerator;
 public class ExpressionScanner : Visitor
 {
     public List<(string, int?, int?)> IdentifierAvailability { get; } = []; // (name, position where availability starts, position where availability ends)
+    public List<string> Ghosts { get; } = [];
     private readonly List<Expression> _integerExprs = [];
     private readonly List<(string, Type, string)> _allArgumentlessPreds = []; // (scope, return type, predicate name)
     
@@ -47,6 +48,8 @@ public class ExpressionScanner : Visitor
             } else if (member is Field f) {
                 if (_insideDefaultClass || _insideFaultyTopLevelDecl)
                     IdentifierAvailability.Add((f.Name, null, null));
+                if (f.IsGhost)
+                    Ghosts.Add(f.Name);
             }
         }
         _insideFaultyTopLevelDecl = false;
@@ -68,7 +71,8 @@ public class ExpressionScanner : Visitor
             }
             
             // argumentless predicates callable by objects of type _currentTopLevelDecl
-            _allArgumentlessPreds.Add((_currentTopLevelDecl, function.ResultType, function.Name));
+            if (!function.IsGhost)
+                _allArgumentlessPreds.Add((_currentTopLevelDecl, function.ResultType, function.Name));
         }
     }
     
@@ -106,6 +110,8 @@ public class ExpressionScanner : Visitor
     protected override void VisitStatement(VarDeclStmt vDeclStmt) {
         foreach (var lhs in vDeclStmt.Locals) {
             IdentifierAvailability.Add((lhs.Name, lhs.EndToken.pos, _currentScopeLimit));
+            if (vDeclStmt.IsGhost)
+                Ghosts.Add(lhs.Name);
         }
         base.VisitStatement(vDeclStmt);
     }
@@ -143,7 +149,8 @@ public class ExpressionScanner : Visitor
         );
         foreach (var pred in applicablePreds) {
             var suffixName = new Name(pred.Item3);
-            var callExpr = new ExprDotName(expr.Origin, expr, suffixName, null);
+            var exprDotName = new ExprDotName(expr.Origin, expr, suffixName, null);
+            var callExpr = new ApplySuffix(expr.Origin, null, exprDotName, [], null);
             
             if (pred.Item2 is BoolType) {
                 AddExpression(callExpr, SnapshotGenerator.ProgramAbstractions);
@@ -310,6 +317,8 @@ public class ExpressionScanner : Visitor
     /// Utils
     /// -------------------------
     private void AddExpression(Expression expr, List<Expression> collection) {
+        if (expr is ApplySuffix { ResolvedExpression: FunctionCallExpr fCallExpr } &&
+            fCallExpr.Function.IsGhost) return;
         if (!ExprAlreadyCollected(expr, collection))
             collection.Add(expr);
     }

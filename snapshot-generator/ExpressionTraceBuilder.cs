@@ -5,21 +5,26 @@ namespace SnapshotGenerator;
 public sealed class ExpressionTraceBuilder : Visitor
 {
     private List<(string, int?, int?)> IdentifierAvailability { get; }
+    public List<string> Ghosts { get; } = [];
     private readonly List<(Expression, int?, int?)> _exprAvailabilityScope;
     private readonly List<Statement> _newMethodBody = [];
     
     private int? _currentExprAvailabilityScopeStart;
     private int? _currentExprAvailabilityScopeEnd;
+    private bool _hasGhostChild;
 
-    public ExpressionTraceBuilder(List<(string, int?, int?)> identifierAvailability) {
+    public ExpressionTraceBuilder(List<(string, int?, int?)> identifierAvailability, List<string> ghosts) {
         IdentifierAvailability = identifierAvailability;
+        Ghosts = ghosts;
         _exprAvailabilityScope = [];
         // identify the scope in which each program abstraction is observable according to the scope in which its subexpressions are defined
         foreach (var expr in SnapshotGenerator.ProgramAbstractions) {
             HandleExpression(expr);
-            _exprAvailabilityScope.Add((expr, _currentExprAvailabilityScopeStart, _currentExprAvailabilityScopeEnd));
+            if (!_hasGhostChild)
+                _exprAvailabilityScope.Add((expr, _currentExprAvailabilityScopeStart, _currentExprAvailabilityScopeEnd));
             _currentExprAvailabilityScopeStart = null;
             _currentExprAvailabilityScopeEnd = null;
+            _hasGhostChild = false;
         }
     }
     
@@ -45,10 +50,14 @@ public sealed class ExpressionTraceBuilder : Visitor
 
     protected override void VisitExpression(NameSegment nSegExpr) {
         DetermineIdentifierAvailability(nSegExpr.Name);
+        if (Ghosts.Contains(nSegExpr.Name))
+            _hasGhostChild = true;
     }
 
     protected override void VisitExpression(IdentifierExpr idExpr) {
         DetermineIdentifierAvailability(idExpr.Name);
+        if (Ghosts.Contains(idExpr.Name))
+            _hasGhostChild = true;
     }
 
     /// -------------------------
