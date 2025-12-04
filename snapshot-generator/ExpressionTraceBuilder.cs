@@ -12,6 +12,7 @@ public sealed class ExpressionTraceBuilder : Visitor
     private int? _currentExprAvailabilityScopeStart;
     private int? _currentExprAvailabilityScopeEnd;
     private bool _hasGhostChild;
+    private bool _hasIdentifierChild;
 
     public ExpressionTraceBuilder(List<(string, int?, int?)> identifierAvailability, List<string> ghosts) {
         IdentifierAvailability = identifierAvailability;
@@ -20,11 +21,12 @@ public sealed class ExpressionTraceBuilder : Visitor
         // identify the scope in which each program abstraction is observable according to the scope in which its subexpressions are defined
         foreach (var expr in SnapshotGenerator.ProgramAbstractions) {
             HandleExpression(expr);
-            if (!_hasGhostChild)
+            if (!_hasGhostChild && _hasIdentifierChild) // predicates involving only literals aren't relevant since they don't abstract program state
                 _exprAvailabilityScope.Add((expr, _currentExprAvailabilityScopeStart, _currentExprAvailabilityScopeEnd));
             _currentExprAvailabilityScopeStart = null;
             _currentExprAvailabilityScopeEnd = null;
             _hasGhostChild = false;
+            _hasIdentifierChild = false;
         }
     }
     
@@ -52,14 +54,22 @@ public sealed class ExpressionTraceBuilder : Visitor
 
     protected override void VisitExpression(NameSegment nSegExpr) {
         DetermineIdentifierAvailability(nSegExpr.Name);
+        _hasIdentifierChild = true;
         if (Ghosts.Contains(nSegExpr.Name))
             _hasGhostChild = true;
     }
 
     protected override void VisitExpression(IdentifierExpr idExpr) {
         DetermineIdentifierAvailability(idExpr.Name);
+        _hasIdentifierChild = true;
         if (Ghosts.Contains(idExpr.Name))
             _hasGhostChild = true;
+    }
+    
+    protected override void VisitExpression(SuffixExpr suffixExpr) {
+        if (suffixExpr is ExprDotName)
+            _hasIdentifierChild = true;
+        base.VisitExpression(suffixExpr);
     }
 
     /// -------------------------
