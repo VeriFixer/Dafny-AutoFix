@@ -7,7 +7,7 @@ public sealed class ExpressionTraceBuilder : Visitor
     private List<(string, int?, int?)> IdentifierAvailability { get; }
     public List<string> Ghosts { get; } = [];
     private readonly List<(Expression, int?, int?)> _exprAvailabilityScope;
-    private readonly List<Statement> _newMethodBody = [];
+    private List<Statement> _newBlockBody = [];
     
     private int? _currentExprAvailabilityScopeStart;
     private int? _currentExprAvailabilityScopeEnd;
@@ -36,16 +36,18 @@ public sealed class ExpressionTraceBuilder : Visitor
         HandleMethod(faultyMethod);
     }
     
-    protected override void HandleMethod(Method method) {
-        if (method.Body == null) return;
-        
-        InstrumentLine(method.Body.StartToken);
-        foreach (var stmt in method.Body.Body) {
-            _newMethodBody.Add(stmt);
+    protected override void HandleBlock(BlockStmt blockStmt) {
+        var prevNewBlock = _newBlockBody;
+        _newBlockBody = [];
+        InstrumentLine(blockStmt.StartToken);
+        foreach (var stmt in blockStmt.Body) {
+            _newBlockBody.Add(stmt);
             HandleStatement(stmt);
             InstrumentLine(stmt.EndToken);
         }
-        method.Body.Body = _newMethodBody;
+        blockStmt.Body = _newBlockBody;
+        _newBlockBody = prevNewBlock;
+        _newBlockBody.Add(blockStmt);
     }
 
     protected override void VisitExpression(NameSegment nSegExpr) {
@@ -66,7 +68,7 @@ public sealed class ExpressionTraceBuilder : Visitor
     private void InstrumentLine(Token token) {
         var availableExprs = _exprAvailabilityScope.Where(
             expr => 
-                (token.pos >= expr.Item2 && token.pos <= expr.Item3) || 
+                (token.pos > expr.Item2 && token.pos < expr.Item3) || 
                 (expr.Item2 == null && expr.Item3 == null)
         );
         
@@ -79,7 +81,7 @@ public sealed class ExpressionTraceBuilder : Visitor
                 posElement, delimElement1, exprStrElement, delimElement1, expr.Item1, delimElement2
             ];
             var newStmt = new PrintStmt(token, printElements);
-            _newMethodBody.Add(newStmt);
+            _newBlockBody.Add(newStmt);
         }
     }
     
