@@ -1,7 +1,7 @@
 ﻿using Microsoft.Dafny;
 using Type = Microsoft.Dafny.Type;
 
-namespace SnapshotGenerator;
+namespace SnapshotGenerator.Enumeration;
 
 public class ExpressionScanner : Visitor
 {
@@ -36,8 +36,8 @@ public class ExpressionScanner : Visitor
     
     protected override void HandleMemberDecls(TopLevelDeclWithMembers decl) {  
         _currentTopLevelDecl = decl.Name;
-        if (decl.StartToken.line <= SnapshotGenerator.ViolationLine && 
-            decl.EndToken.line >= SnapshotGenerator.ViolationLine)
+        if (decl.StartToken.line <= Enumerator.ViolationLine && 
+            decl.EndToken.line >= Enumerator.ViolationLine)
             _insideFaultyTopLevelDecl = true;
         
         foreach (var member in decl.Members) {
@@ -57,9 +57,9 @@ public class ExpressionScanner : Visitor
     
     protected override void HandleMethod(Method method) {
         // find the faulty method, i.e., where the violation occurs  
-        if (method.StartToken.line <= SnapshotGenerator.ViolationLine &&
-            method.EndToken.line >= SnapshotGenerator.ViolationLine)
-            SnapshotGenerator.FaultyMethod = method;
+        if (method.StartToken.line <= Enumerator.ViolationLine &&
+            method.EndToken.line >= Enumerator.ViolationLine)
+            Enumerator.FaultyMethod = method;
     }
     
     protected override void HandleFunction(Function function) {
@@ -67,7 +67,7 @@ public class ExpressionScanner : Visitor
         if (function.Ins.Count == 0 && function.Body != null) {
             if (function.ResultType is BoolType) {
                 if (_insideDefaultClass || _insideFaultyTopLevelDecl)
-                    AddExpression(function.Body, SnapshotGenerator.ProgramAbstractions);
+                    AddExpression(function.Body, Enumerator.ProgramAbstractions);
             }
             
             // argumentless predicates callable by objects of type _currentTopLevelDecl
@@ -80,7 +80,7 @@ public class ExpressionScanner : Visitor
     /// Faulty method visit
     /// -------------------------
     public void VisitFaultyMethod() {
-        var faultyMethod = SnapshotGenerator.FaultyMethod;
+        var faultyMethod = Enumerator.FaultyMethod;
         if (faultyMethod == null)
             return;
 
@@ -133,7 +133,7 @@ public class ExpressionScanner : Visitor
     /// -------------------------
     private void CollectExpressions(Expression expr) {
         if (expr.Type is BoolType)
-            AddExpression(expr, SnapshotGenerator.ProgramAbstractions);
+            AddExpression(expr, Enumerator.ProgramAbstractions);
         if (expr.Type is IntType || (expr.Type is UserDefinedType intUType && intUType.Name == "nat"))
             AddExpression(expr, _integerExprs);
         if (expr.Type is UserDefinedType uType && uType.Name[^1] == '?')
@@ -153,7 +153,7 @@ public class ExpressionScanner : Visitor
             var callExpr = new ApplySuffix(expr.Origin, null, exprDotName, [], null);
             
             if (pred.Item2 is BoolType) {
-                AddExpression(callExpr, SnapshotGenerator.ProgramAbstractions);
+                AddExpression(callExpr, Enumerator.ProgramAbstractions);
             } else if (pred.Item2 is IntType || (pred.Item2 is UserDefinedType intUType && intUType.Name == "nat")) {
                 AddExpression(callExpr, _integerExprs);
             } else if (pred.Item2 is UserDefinedType uType && uType.Name[^1] == '?') {
@@ -183,11 +183,11 @@ public class ExpressionScanner : Visitor
     
     private void CollectBoolExprsFromIntegers(Expression intExpr1, Expression intExpr2) {
         var intCompExpr = Expression.CreateEq(intExpr1, intExpr2, Type.Int);
-        AddExpression(intCompExpr, SnapshotGenerator.ProgramAbstractions);
+        AddExpression(intCompExpr, Enumerator.ProgramAbstractions);
         intCompExpr = Expression.CreateLess(intExpr1, intExpr2);
-        AddExpression(intCompExpr, SnapshotGenerator.ProgramAbstractions);
+        AddExpression(intCompExpr, Enumerator.ProgramAbstractions);
         intCompExpr = Expression.CreateAtMost(intExpr1, intExpr2);
-        AddExpression(intCompExpr, SnapshotGenerator.ProgramAbstractions);
+        AddExpression(intCompExpr, Enumerator.ProgramAbstractions);
     }
 
     private void CollectBoolExprFromNullableRef(Expression expr) {
@@ -196,26 +196,26 @@ public class ExpressionScanner : Visitor
         var nullLiteral = new LiteralExpr(expr.Origin, null);
         nullLiteral.Type = expr.Type; // expression should be resolved to avoid errors
         var nullCompExpr = Expression.CreateEq(expr, nullLiteral, expr.Type);
-        AddExpression(nullCompExpr, SnapshotGenerator.ProgramAbstractions);
+        AddExpression(nullCompExpr, Enumerator.ProgramAbstractions);
     }
 
     private void CollectImpliesMutations(BinaryExpr bExpr) { // bExpr = a ==> b
         Expression mutation = CreateExprComplement(bExpr);
-        AddExpression(mutation, SnapshotGenerator.ProgramAbstractions); // not a ==> b
+        AddExpression(mutation, Enumerator.ProgramAbstractions); // not a ==> b
         var negateConsequent = CreateExprComplement(bExpr.E1);
         mutation = Expression.CreateImplies(bExpr.E0, negateConsequent, false);
-        AddExpression(mutation, SnapshotGenerator.ProgramAbstractions); // a ==> not b
+        AddExpression(mutation, Enumerator.ProgramAbstractions); // a ==> not b
         mutation = Expression.CreateImplies(bExpr.E1, bExpr.E0, false);
-        AddExpression(mutation, SnapshotGenerator.ProgramAbstractions); // b ==> a
+        AddExpression(mutation, Enumerator.ProgramAbstractions); // b ==> a
     }
 
     private void CollectExprsComplements() {
-        foreach (var expr in SnapshotGenerator.ProgramAbstractions.ToList()) {
+        foreach (var expr in Enumerator.ProgramAbstractions.ToList()) {
             Expression? complement = null;
             if (expr is BinaryExpr bExpr)
                 complement = CollectBinaryExprComplement(bExpr);
             complement ??= CreateExprComplement(expr);
-            AddExpression(complement, SnapshotGenerator.ProgramAbstractions);
+            AddExpression(complement, Enumerator.ProgramAbstractions);
         }
     }
 

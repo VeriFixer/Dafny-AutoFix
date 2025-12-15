@@ -1,6 +1,6 @@
 using Microsoft.Dafny;
 
-namespace SnapshotGenerator;
+namespace SnapshotGenerator.Enumeration;
 
 public sealed class ExpressionTraceBuilder : Visitor
 {
@@ -19,7 +19,7 @@ public sealed class ExpressionTraceBuilder : Visitor
         Ghosts = ghosts;
         _exprAvailabilityScope = [];
         // identify the scope in which each program abstraction is observable according to the scope in which its subexpressions are defined
-        foreach (var expr in SnapshotGenerator.ProgramAbstractions) {
+        foreach (var expr in Enumerator.ProgramAbstractions) {
             HandleExpression(expr);
             if (!_hasGhostChild && _hasIdentifierChild) // predicates involving only literals aren't relevant since they don't abstract program state
                 _exprAvailabilityScope.Add((expr, _currentExprAvailabilityScopeStart, _currentExprAvailabilityScopeEnd));
@@ -31,7 +31,7 @@ public sealed class ExpressionTraceBuilder : Visitor
     }
     
     public void InstrumentFaultyMethod() {
-        var faultyMethod = SnapshotGenerator.FaultyMethod;
+        var faultyMethod = Enumerator.FaultyMethod;
         if (faultyMethod == null)
             return;
         
