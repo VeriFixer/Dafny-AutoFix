@@ -49,7 +49,6 @@ public sealed class ExpressionTraceBuilder : Visitor
         }
         blockStmt.Body = _newBlockBody;
         _newBlockBody = prevNewBlock;
-        _newBlockBody.Add(blockStmt);
     }
 
     protected override void VisitExpression(NameSegment nSegExpr) {
