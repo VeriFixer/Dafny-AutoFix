@@ -3,29 +3,15 @@ using Type = Microsoft.Dafny.Type;
 
 namespace SnapshotGenerator.Enumeration;
 
-public class ExpressionScanner : Visitor
+public class ExpressionScanner : IdentifierAvailabilityScanner
 {
-    public List<(string, int?, int?)> IdentifierAvailability { get; } = []; // (name, position where availability starts, position where availability ends)
-    public List<string> Ghosts { get; } = [];
     private readonly List<Expression> _integerExprs = [];
     private readonly List<(string, Type, string)> _allArgumentlessPreds = []; // (scope, return type, predicate name)
-    
-    private bool _insideDefaultClass;
-    private bool _insideFaultyTopLevelDecl;
     private string _currentTopLevelDecl = "";
-    private int _currentScopeLimit;
     
     /// -------------------------
     /// General AST node visitors
     /// -------------------------
-    protected override void HandleDefaultClassDecl(ModuleDefinition module) {
-        if (module.DefaultClass == null) return;
-        
-        _insideDefaultClass = true;
-        HandleMemberDecls(module.DefaultClass); // requires visit to determine if it includes faulty method
-        _insideDefaultClass = false;
-    }
-    
     protected override void HandleSourceDecls(ModuleDefinition module) {
         foreach (var decl in module.SourceDecls) {
             if (decl is not TopLevelDeclWithMembers declWithMembers) // includes class, trait, datatype, etc.
@@ -36,23 +22,7 @@ public class ExpressionScanner : Visitor
     
     protected override void HandleMemberDecls(TopLevelDeclWithMembers decl) {  
         _currentTopLevelDecl = decl.Name;
-        if (decl.StartToken.line <= Enumerator.ViolationLine && 
-            decl.EndToken.line >= Enumerator.ViolationLine)
-            _insideFaultyTopLevelDecl = true;
-        
-        foreach (var member in decl.Members) {
-            if (member is Method m) { // includes constructor
-                HandleMethod(m);  
-            } else if (member is Function func) { // includes predicate
-                HandleFunction(func);
-            } else if (member is Field f) {
-                if (_insideDefaultClass || _insideFaultyTopLevelDecl)
-                    IdentifierAvailability.Add((f.Name, null, null));
-                if (f.IsGhost)
-                    Ghosts.Add(f.Name);
-            }
-        }
-        _insideFaultyTopLevelDecl = false;
+        base.HandleMemberDecls(decl);
     }
     
     protected override void HandleMethod(Method method) {
@@ -66,7 +36,7 @@ public class ExpressionScanner : Visitor
         // collect argumentless boolean predicates
         if (function.Ins.Count == 0 && function.Body != null) {
             if (function.ResultType is BoolType) {
-                if (_insideDefaultClass || _insideFaultyTopLevelDecl)
+                if (InsideDefaultClass || InsideFaultyTopLevelDecl)
                     AddExpression(function.Body, Enumerator.ProgramAbstractions);
             }
             
@@ -83,37 +53,10 @@ public class ExpressionScanner : Visitor
         var faultyMethod = Enumerator.FaultyMethod;
         if (faultyMethod == null)
             return;
-
-        foreach (var input in faultyMethod.Ins)
-            IdentifierAvailability.Add((input.Name, faultyMethod.StartToken.pos, faultyMethod.EndToken.pos));
+        
         base.HandleMethod(faultyMethod);
         CollectBoolExprsFromIntegers();
         CollectExprsComplements();
-    }
-    
-    protected override void HandleBlock(BlockStmt blockStmt) {
-        var prevScope = _currentScopeLimit;
-        _currentScopeLimit = blockStmt.EndToken.pos;
-        base.HandleBlock(blockStmt);
-        _currentScopeLimit = prevScope;
-    }
-    
-    protected override void VisitStatement(ConcreteAssignStatement cAStmt) {
-        foreach (var lhs in cAStmt.Lhss) {
-            if (IdentifierAvailability.Count(id => id.Item1 == lhs.ToString()) > 0)
-                continue;
-            IdentifierAvailability.Add((lhs.ToString(), lhs.EndToken.pos, _currentScopeLimit));
-        }
-        base.VisitStatement(cAStmt);
-    }
-    
-    protected override void VisitStatement(VarDeclStmt vDeclStmt) {
-        foreach (var lhs in vDeclStmt.Locals) {
-            IdentifierAvailability.Add((lhs.Name, lhs.EndToken.pos, _currentScopeLimit));
-            if (vDeclStmt.IsGhost)
-                Ghosts.Add(lhs.Name);
-        }
-        base.VisitStatement(vDeclStmt);
     }
 
     protected override void HandleExpression(Expression expr) {
