@@ -1,10 +1,11 @@
 using Microsoft.Dafny;
+using Type = Microsoft.Dafny.Type;
 
 namespace SnapshotGenerator.Enumeration;
 
 public sealed class ExpressionTraceBuilder : Visitor
 {
-    private List<(string, int?, int?)> IdentifierAvailability { get; }
+    private List<(string, Type, int?, int?)> IdentifierAvailability { get; }
     private List<string> Ghosts { get; }
     private readonly List<(Expression, int?, int?)> _exprAvailabilityScope;
     private List<Statement> _newBlockBody = [];
@@ -14,7 +15,7 @@ public sealed class ExpressionTraceBuilder : Visitor
     private bool _hasGhostChild;
     private bool _hasIdentifierChild;
 
-    public ExpressionTraceBuilder(List<(string, int?, int?)> identifierAvailability, List<string> ghosts) {
+    public ExpressionTraceBuilder(List<(string, Type, int?, int?)> identifierAvailability, List<string> ghosts) {
         IdentifierAvailability = identifierAvailability;
         Ghosts = ghosts;
         _exprAvailabilityScope = [];
@@ -96,8 +97,8 @@ public sealed class ExpressionTraceBuilder : Visitor
     
     private void DetermineIdentifierAvailability(string idName) {
         var identifier = IdentifierAvailability.Find((id) => id.Item1 == idName);
-        var identifierAvailabilityScopeStart = identifier.Item2;
-        var identifierAvailabilityScopeEnd = identifier.Item3;
+        var identifierAvailabilityScopeStart = identifier.Item3;
+        var identifierAvailabilityScopeEnd = identifier.Item4;
         
         if (_currentExprAvailabilityScopeStart == null ||
             (identifierAvailabilityScopeStart != null && 

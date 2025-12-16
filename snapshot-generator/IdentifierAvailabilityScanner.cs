@@ -1,15 +1,16 @@
 using Microsoft.Dafny;
+using Type = Microsoft.Dafny.Type;
 
 namespace SnapshotGenerator;
 
 public class IdentifierAvailabilityScanner(bool multipleModule = false) : Visitor(multipleModule)
 {
-    public List<(string, int?, int?)> IdentifierAvailability { get; } = []; // (name, position where availability starts, position where availability ends)
+    public List<(string, Type, int?, int?)> IdentifierAvailability { get; } = []; // (name, position where availability starts, position where availability ends)
     public List<string> Ghosts { get; } = [];
     
     protected bool InsideDefaultClass;
     protected bool InsideFaultyTopLevelDecl;
-    protected int CurrentScopeLimit;
+    private int _currentScopeLimit;
     
     protected override void HandleDefaultClassDecl(ModuleDefinition module) {
         if (module.DefaultClass == null) return;
@@ -31,7 +32,7 @@ public class IdentifierAvailabilityScanner(bool multipleModule = false) : Visito
                 HandleFunction(func);
             } else if (member is Field f) {
                 if (InsideDefaultClass || InsideFaultyTopLevelDecl)
-                    IdentifierAvailability.Add((f.Name, null, null));
+                    IdentifierAvailability.Add((f.Name, f.Type, null, null));
                 if (f.IsGhost)
                     Ghosts.Add(f.Name);
             }
@@ -41,29 +42,29 @@ public class IdentifierAvailabilityScanner(bool multipleModule = false) : Visito
     
     protected override void HandleMethod(Method method) {
         foreach (var input in method.Ins)
-            IdentifierAvailability.Add((input.Name, method.StartToken.pos, method.EndToken.pos));
+            IdentifierAvailability.Add((input.Name, input.Type, method.StartToken.pos, method.EndToken.pos));
         base.HandleMethod(method);
     }
     
     protected override void HandleBlock(BlockStmt blockStmt) {
-        var prevScope = CurrentScopeLimit;
-        CurrentScopeLimit = blockStmt.EndToken.pos;
+        var prevScope = _currentScopeLimit;
+        _currentScopeLimit = blockStmt.EndToken.pos;
         base.HandleBlock(blockStmt);
-        CurrentScopeLimit = prevScope;
+        _currentScopeLimit = prevScope;
     }
     
     protected override void VisitStatement(ConcreteAssignStatement cAStmt) {
         foreach (var lhs in cAStmt.Lhss) {
             if (IdentifierAvailability.Count(id => id.Item1 == lhs.ToString()) > 0)
                 continue;
-            IdentifierAvailability.Add((lhs.ToString(), lhs.EndToken.pos, CurrentScopeLimit));
+            IdentifierAvailability.Add((lhs.ToString(), lhs.Type, lhs.EndToken.pos, _currentScopeLimit));
         }
         base.VisitStatement(cAStmt);
     }
     
     protected override void VisitStatement(VarDeclStmt vDeclStmt) {
         foreach (var lhs in vDeclStmt.Locals) {
-            IdentifierAvailability.Add((lhs.Name, lhs.EndToken.pos, CurrentScopeLimit));
+            IdentifierAvailability.Add((lhs.Name, lhs.Type, lhs.EndToken.pos, _currentScopeLimit));
             if (vDeclStmt.IsGhost)
                 Ghosts.Add(lhs.Name);
         }
