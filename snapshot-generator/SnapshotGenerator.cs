@@ -77,6 +77,7 @@ public class InvariantInferrer : Rewriter
     public static int ViolationLine { get; private set; }
     public static int ViolationColumn { get; private set; }
     public static Method? FaultyMethod { get; set; }
+    public static Method? MainMethod { get; set; }
     
     private readonly DaikonInstrumenter _instrumenter = new();
 
@@ -86,7 +87,9 @@ public class InvariantInferrer : Rewriter
         ViolationColumn = violationColumn;
     }
     
-    public override void PreResolve(ModuleDefinition module) {
+    public override void PostResolve(ModuleDefinition module) {
+        if (module.Name != "_module") 
+            return;
         _instrumenter.Instrument(module);
     }
 }
