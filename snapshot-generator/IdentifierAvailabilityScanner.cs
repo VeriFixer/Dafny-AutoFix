@@ -45,10 +45,6 @@ public class IdentifierAvailabilityScanner(bool multipleModule = false) : Visito
         base.HandleMethod(method);
     }
     
-    protected void HandleMethodBase(Method method) {
-        base.HandleMethod(method);
-    }
-    
     protected override void HandleBlock(BlockStmt blockStmt) {
         var prevScope = CurrentScopeLimit;
         CurrentScopeLimit = blockStmt.EndToken.pos;

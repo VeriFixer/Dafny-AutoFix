@@ -5,7 +5,7 @@ namespace SnapshotGenerator.Enumeration;
 public sealed class ExpressionTraceBuilder : Visitor
 {
     private List<(string, int?, int?)> IdentifierAvailability { get; }
-    public List<string> Ghosts { get; } = [];
+    private List<string> Ghosts { get; }
     private readonly List<(Expression, int?, int?)> _exprAvailabilityScope;
     private List<Statement> _newBlockBody = [];
     
