@@ -2,7 +2,7 @@ using Microsoft.Dafny;
 
 namespace SnapshotGenerator;
 
-public class IdentifierAvailabilityScanner : Visitor
+public class IdentifierAvailabilityScanner(bool multipleModule = false) : Visitor(multipleModule)
 {
     public List<(string, int?, int?)> IdentifierAvailability { get; } = []; // (name, position where availability starts, position where availability ends)
     public List<string> Ghosts { get; } = [];
@@ -42,6 +42,10 @@ public class IdentifierAvailabilityScanner : Visitor
     protected override void HandleMethod(Method method) {
         foreach (var input in method.Ins)
             IdentifierAvailability.Add((input.Name, method.StartToken.pos, method.EndToken.pos));
+        base.HandleMethod(method);
+    }
+    
+    protected void HandleMethodBase(Method method) {
         base.HandleMethod(method);
     }
     

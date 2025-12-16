@@ -12,7 +12,9 @@ public abstract class Visitor
     private readonly Dictionary<Type, Action<Statement>> _statementHandlers;
     private readonly Dictionary<Type, Action<Expression>> _expressionHandlers;
     
-    protected Visitor()
+    private readonly bool _multipleModule;
+    
+    protected Visitor(bool multipleModule = false)
     {
         _statementHandlers = new Dictionary<Type, Action<Statement>> {
             {typeof(BlockStmt), stmt => VisitStatement((stmt as BlockStmt)!)},
@@ -78,6 +80,7 @@ public abstract class Visitor
             {typeof(UnchangedExpr), expr => VisitExpression((expr as UnchangedExpr)!)},
             {typeof(DecreasesToExpr), expr => VisitExpression((expr as DecreasesToExpr)!)},
         };
+        _multipleModule = multipleModule;
     }
 
     /// ---------------------------
@@ -98,7 +101,9 @@ public abstract class Visitor
             if (decl is TopLevelDeclWithMembers declWithMembers) { // includes class, trait, datatype, etc.
                 HandleMemberDecls(declWithMembers);   
             }
-            if (decl is IteratorDecl itDecl) {
+            if (decl is LiteralModuleDecl moduleDecl && _multipleModule) {
+                Visit(moduleDecl.ModuleDef);
+            } else if (decl is IteratorDecl itDecl) {
                 HandleBlock(itDecl.Body);
             } else if (decl is NewtypeDecl newTpDecl) {
                 HandleExpression(newTpDecl.Constraint);
