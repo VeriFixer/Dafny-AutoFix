@@ -21,7 +21,7 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
         
         AddHeader();
         AddMethodDeclaration(faultyMethod);
-        // TODO: dummy methods declarations
+        AddDummyMethodsDeclarations();
         if (mainMethod.Body == null) {
             mainMethod.Body = new BlockStmt(mainMethod.Origin, _newStmts);
         } else {
@@ -136,10 +136,10 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
         if (mainMethod == null) return;
         
         foreach (var type in new List<string> { "ENTER", "EXIT00" }) {
-            var programPointDecl = $"ppt {mainMethod.FullSanitizedName}():::{type}\\n";
+            var programPointDecl = $"ppt {method.FullSanitizedName}():::{type}\\n";
             var declarationElement = AstUtils.CreateStringLiteral(mainMethod.Origin, programPointDecl);
             _newStmts.Add(new PrintStmt(mainMethod.Origin, [declarationElement]));
-            var programPointType = type == "ENTER" ? "ppt-type enter" : "ppt-type subexit\\n";
+            var programPointType = type == "ENTER" ? "ppt-type enter\\n" : "ppt-type subexit\\n";
             declarationElement = AstUtils.CreateStringLiteral(mainMethod.Origin, programPointType);
             _newStmts.Add(new PrintStmt(mainMethod.Origin, [declarationElement]));
 
@@ -177,5 +177,11 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
         };
         declarationElement = AstUtils.CreateStringLiteral(token, comparability);
         _newStmts.Add(new PrintStmt(token, [declarationElement]));
+    }
+
+    private void AddDummyMethodsDeclarations() {
+        foreach (var dummyMethod in _newMethods) {
+            AddMethodDeclaration(dummyMethod);
+        }
     }
 }
