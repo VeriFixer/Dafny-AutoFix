@@ -8,15 +8,15 @@ namespace SnapshotGenerator;
 
 public class SnapshotGenerator : PluginConfiguration
 {
-    private int _violationLine;
-    private int _violationColumn;
+    public static int ViolationLine { get; private set; }
+    public static int ViolationColumn { get; private set; }
     private bool _enumeration;
     private bool _invariantInference;
     
     public override void ParseArguments(string[] args) {
         if (args.Length < 3) return;
-        _violationLine = int.Parse(args[0]);
-        _violationColumn = int.Parse(args[1]);
+        ViolationLine = int.Parse(args[0]);
+        ViolationColumn = int.Parse(args[1]);
         if (args[2] == "enum") {
             _enumeration = true;
         } else if (args[2] == "inv") { 
@@ -25,31 +25,23 @@ public class SnapshotGenerator : PluginConfiguration
     }
     
    public override Rewriter[] GetRewriters(ErrorReporter reporter) { 
-       return _enumeration ? [new Enumerator(reporter, _violationLine, _violationColumn)] : 
-            (_invariantInference ? [new InvariantInferrer(reporter, _violationLine, _violationColumn)] : []);
+       return _enumeration ? [new Enumerator(reporter)] : 
+            (_invariantInference ? [new InvariantInferrer(reporter)] : []);
    }
 }
 
-public class Enumerator : Rewriter
+public class Enumerator(ErrorReporter reporter) : Rewriter(reporter)
 {
-    public static int ViolationLine { get; private set; }
-    public static int ViolationColumn { get; private set; }
     public static Method? FaultyMethod { get; set; }
     public static readonly List<Expression> ProgramAbstractions = [];
 
     private readonly ExpressionScanner _scanner = new();
 
-    public Enumerator(ErrorReporter reporter, int violationLine, int violationColumn) : base(reporter) {
-        FaultyMethod = null;
-        ViolationLine = violationLine;
-        ViolationColumn = violationColumn;
-    }
-
-    public override void PreResolve(ModuleDefinition module) {
-        _scanner.Visit(module);
-    }
-
     public override void PostResolve(ModuleDefinition module) {
+        if (module.Name != "_module") 
+            return;
+        
+        _scanner.Visit(module);
         if (FaultyMethod == null) return;
         // collect additional predicates from faulty method after fully parsing the AST
         _scanner.VisitFaultyMethod();
@@ -72,24 +64,15 @@ public class Enumerator : Rewriter
     }
 }
 
-public class InvariantInferrer : Rewriter
+public class InvariantInferrer(ErrorReporter reporter) : Rewriter(reporter)
 {
-    public static int ViolationLine { get; private set; }
-    public static int ViolationColumn { get; private set; }
     public static Method? FaultyMethod { get; set; }
     public static Method? MainMethod { get; set; }
-    
-    private readonly DaikonInstrumenter _instrumenter = new();
-
-    public InvariantInferrer(ErrorReporter reporter, int violationLine, int violationColumn) : base(reporter) {
-        FaultyMethod = null;
-        ViolationLine = violationLine;
-        ViolationColumn = violationColumn;
-    }
     
     public override void PostResolve(ModuleDefinition module) {
         if (module.Name != "_module") 
             return;
-        _instrumenter.Instrument(module);
+        DaikonInstrumenter instrumenter = new(traceIdentifiers);
+        instrumenter.Instrument(module);
     }
 }

@@ -3,7 +3,7 @@ using Type = Microsoft.Dafny.Type;
 
 namespace SnapshotGenerator.Enumeration;
 
-public class ExpressionScanner : IdentifierAvailabilityScanner
+public class ExpressionScanner() : IdentifierAvailabilityScanner(true)
 {
     private readonly List<Expression> _integerExprs = [];
     private readonly List<(string, Type, string)> _allArgumentlessPreds = []; // (scope, return type, predicate name)
@@ -14,6 +14,10 @@ public class ExpressionScanner : IdentifierAvailabilityScanner
     /// -------------------------
     protected override void HandleSourceDecls(ModuleDefinition module) {
         foreach (var decl in module.SourceDecls) {
+            if (decl is LiteralModuleDecl moduleDecl) {
+                Visit(moduleDecl.ModuleDef);
+                return;
+            }
             if (decl is not TopLevelDeclWithMembers declWithMembers) // includes class, trait, datatype, etc.
                 continue;
             HandleMemberDecls(declWithMembers);
@@ -27,9 +31,10 @@ public class ExpressionScanner : IdentifierAvailabilityScanner
     
     protected override void HandleMethod(Method method) {
         // find the faulty method, i.e., where the violation occurs  
-        if (method.StartToken.line <= Enumerator.ViolationLine &&
-            method.EndToken.line >= Enumerator.ViolationLine)
+        if (method.StartToken.line <= SnapshotGenerator.ViolationLine &&
+            method.EndToken.line >= SnapshotGenerator.ViolationLine)
             Enumerator.FaultyMethod = method;
+        base.HandleMethod(method);
     }
     
     protected override void HandleFunction(Function function) {
