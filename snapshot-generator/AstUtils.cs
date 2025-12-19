@@ -75,4 +75,49 @@ public static class AstUtils
         stringLit.IsVerbatim = false;
         return stringLit;
     } 
+    
+    /// ----------------------------------------------------
+    /// New methods for the creation of resolved expressions
+    /// ----------------------------------------------------
+    public static void ResolveNameSegment(NameSegment nSegExpr, Type type, IVariable? var, MemberDecl? field, TopLevelDeclWithMembers enclosingClass) {
+        nSegExpr.Type = type;
+        Expression resolvedExpr;
+        if (var != null) {
+            resolvedExpr = new IdentifierExpr(nSegExpr.Origin, var);
+        } else if (field != null) {
+            resolvedExpr = CreateMemberSelectExpr(nSegExpr.Origin, field, enclosingClass);
+        } else {
+            return;
+        }
+        nSegExpr.ResolvedExpression = resolvedExpr;
+    }
+
+    public static MemberSelectExpr CreateMemberSelectExpr(IOrigin token, MemberDecl call, TopLevelDeclWithMembers enclosingClass) {
+        Expression obj;
+        if (enclosingClass is DefaultClassDecl) {
+            obj = new StaticReceiverExpr(token, enclosingClass, true);
+        } else {
+            obj = new ImplicitThisExpr(token);
+            var className = new NameSegment(token, enclosingClass.Name, []);
+            obj.Type = new UserDefinedType(token, enclosingClass.Name, enclosingClass, [], className);
+        }
+        
+        return new MemberSelectExpr(token, obj, call.NameNode) {
+            Member = call,
+            TypeApplicationJustMember = []
+        };
+    }
+    
+    /// ---------------------------------------------------
+    /// New methods for the creation of resolved statements
+    /// ---------------------------------------------------
+    public static void ResolveCallAssignStatement(AssignStatement aStmt, Method call, List<Expression> args, TopLevelDeclWithMembers enclosingClass) {
+        if (!(aStmt.Rhss.Count == 1 && aStmt.Rhss[0] is ExprRhs exprRhs && 
+              exprRhs.Expr is ApplySuffix appSufExpr))
+            return;
+        
+        var memberSelectExpr = CreateMemberSelectExpr(appSufExpr.Origin, call, enclosingClass);
+        var resolvedStmt = new CallStmt(aStmt.Origin, [], memberSelectExpr, args);
+        aStmt.ResolvedStatements = [resolvedStmt];
+    }
 }
