@@ -27,6 +27,8 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
         } else {
             mainMethod.Body.Body = _newStmts.Concat(mainMethod.Body.Body).ToList();  
         }
+        // TODO: instrument global variable that controls invocation nonce and its increasing
+        AddMethodTracePoints(faultyMethod);
     }
     
     protected override void HandleMemberDecls(TopLevelDeclWithMembers decl) {
@@ -132,7 +134,7 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
     }
 
     private void AddMethodDeclaration(Method method) {
-        var mainMethod = InvariantInferrer.FaultyMethod;
+        var mainMethod = InvariantInferrer.MainMethod;
         if (mainMethod == null) return;
         
         foreach (var type in new List<string> { "ENTER", "EXIT00" }) {
@@ -183,5 +185,51 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
         foreach (var dummyMethod in _newMethods) {
             AddMethodDeclaration(dummyMethod);
         }
+    }
+
+    private void AddMethodTracePoints(Method method) {
+        // Add points at the method's entrance
+        var newStmts = AddMethodTracePoints(method, true);
+        if (method.Body == null) {
+            method.Body = new BlockStmt(method.Origin, newStmts);
+        } else {
+            method.Body.Body = newStmts.Concat(method.Body.Body).ToList();
+        }
+        // Add points at the method's exit
+        newStmts = AddMethodTracePoints(method, false);
+        method.Body.Body.AddRange(newStmts);
+    }
+    
+    private List<Statement> AddMethodTracePoints(Method method, bool isEntrance) {
+        List<Statement> newStmts = [];
+        var type = isEntrance ? "ENTER" : "EXIT00";
+        var programPoint = $"{method.FullSanitizedName}():::{type}\\n";
+        var declarationElement = AstUtils.CreateStringLiteral(method.Origin, programPoint);
+        newStmts.Add(new PrintStmt(method.Origin, [declarationElement]));
+        // TODO: print invocation nonce
+        
+        foreach (var input in method.Ins)
+            newStmts.AddRange(AddVariableTracePoint(method, input));
+        if (!isEntrance) {
+            foreach (var output in method.Outs)
+                newStmts.AddRange(AddVariableTracePoint(method, output));
+        }
+        
+        var delimElement = AstUtils.CreateStringLiteral(method.Origin, "\\n");
+        newStmts.Add(new PrintStmt(method.Origin, [delimElement]));
+        return newStmts;
+    }
+
+    private List<Statement> AddVariableTracePoint(Method method, Formal f) {
+        List<Statement> newStmts = [];
+        // Print the name of the variable
+        var varIdentification = AstUtils.CreateStringLiteral(method.Origin, $"{f.CompileName}\\n");
+        newStmts.Add(new PrintStmt(method.Origin, [varIdentification]));
+        // Print the value of the variable
+        var varValue = new NameSegment(f.Origin, f.Name, null);
+        AstUtils.ResolveNameSegment(varValue, f.Type, f, null, (TopLevelDeclWithMembers)method.EnclosingClass);
+        var delimElement = AstUtils.CreateStringLiteral(method.Origin, "\\n");
+        newStmts.Add(new PrintStmt(f.Origin, [varValue, delimElement])); // TODO: some types will need to be printed differently
+        return newStmts;
     }
 }
