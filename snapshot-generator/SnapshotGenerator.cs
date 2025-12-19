@@ -72,7 +72,25 @@ public class InvariantInferrer(ErrorReporter reporter) : Rewriter(reporter)
     public override void PostResolve(ModuleDefinition module) {
         if (module.Name != "_module") 
             return;
+        
+        IdentifierAvailabilityScanner scanner = new(true);
+        scanner.Visit(module);
+        var traceIdentifiers = scanner.IdentifierAvailability.Where(
+            expr => !scanner.Ghosts.Contains(expr.Item3)
+        ).ToList();
         DaikonInstrumenter instrumenter = new(traceIdentifiers);
         instrumenter.Instrument(module);
+    }
+
+    public override void PostResolve(Program program) {
+        // save instrumented program
+        var stringWriter = new StringWriter();
+        var printer = new Printer(stringWriter, program.Options, PrintModes.Serialization);
+        printer.PrintProgram(program, false);
+        var programText = stringWriter.ToString();
+
+        var filename = Path.GetFileNameWithoutExtension(program.Name);
+        filename += "_instrumented.dfy";
+        File.WriteAllText(filename, programText);
     }
 }
