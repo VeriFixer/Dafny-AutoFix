@@ -29,6 +29,7 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
         }
         // TODO: instrument global variable that controls invocation nonce and its increasing
         AddMethodTracePoints(faultyMethod);
+        AddDummyMethodsTracePoints();
     }
     
     protected override void HandleMemberDecls(TopLevelDeclWithMembers decl) {
@@ -231,5 +232,11 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
         var delimElement = AstUtils.CreateStringLiteral(method.Origin, "\\n");
         newStmts.Add(new PrintStmt(f.Origin, [varValue, delimElement])); // TODO: some types will need to be printed differently
         return newStmts;
+    }
+    
+    private void AddDummyMethodsTracePoints() {
+        foreach (var dummyMethod in _newMethods) {
+            AddMethodTracePoints(dummyMethod);
+        }
     }
 }
