@@ -27,7 +27,6 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
         } else {
             mainMethod.Body.Body = _newStmts.Concat(mainMethod.Body.Body).ToList();  
         }
-        // TODO: instrument global variable that controls invocation nonce and its increasing
         AddMethodTracePoints(faultyMethod);
         AddDummyMethodsTracePoints();
     }
@@ -167,15 +166,18 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
         declarationElement = AstUtils.CreateStringLiteral(token, $"\tdec-type {f.Type}\\n");
         _newStmts.Add(new PrintStmt(token, [declarationElement]));
         var repType = "\trep-type " + f.Type.ToString() switch {
-            "int" => "int\\n",
+            "int" or "nat" => "int\\n",
             "real" => "double\\n",
+            "bool" => "boolean\\n",
+            "char" or "string" => "java.lang.String\\n",
             _ => "hashcode\\n"
         };
         declarationElement = AstUtils.CreateStringLiteral(token, repType);
         _newStmts.Add(new PrintStmt(token, [declarationElement]));
         var comparability = "\tcomparability " + f.Type.ToString() switch {
             "bool" => "1\\n",
-            "int" => "2\\n",
+            "int" or "nat" or "real" => "2\\n",
+            "char" or "string" => "3\\n",
             _ => "20\\n"
         };
         declarationElement = AstUtils.CreateStringLiteral(token, comparability);
@@ -207,7 +209,6 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
         var programPoint = $"{method.FullSanitizedName}():::{type}\\n";
         var declarationElement = AstUtils.CreateStringLiteral(method.Origin, programPoint);
         newStmts.Add(new PrintStmt(method.Origin, [declarationElement]));
-        // TODO: print invocation nonce
         
         foreach (var input in method.Ins)
             newStmts.AddRange(AddVariableTracePoint(method, input));
@@ -222,15 +223,17 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
     }
 
     private List<Statement> AddVariableTracePoint(Method method, Formal f) {
+        var daikonValue = DaikonFormatConverter.ToDaikonValue(
+            method.Origin, f, (TopLevelDeclWithMembers)method.EnclosingClass
+        );
+        if (daikonValue == null)
+            return [];
         List<Statement> newStmts = [];
         // Print the name of the variable
         var varIdentification = AstUtils.CreateStringLiteral(method.Origin, $"{f.CompileName}\\n");
         newStmts.Add(new PrintStmt(method.Origin, [varIdentification]));
         // Print the value of the variable
-        var varValue = new NameSegment(f.Origin, f.Name, null);
-        AstUtils.ResolveNameSegment(varValue, f.Type, f, null, (TopLevelDeclWithMembers)method.EnclosingClass);
-        var delimElement = AstUtils.CreateStringLiteral(method.Origin, "\\n");
-        newStmts.Add(new PrintStmt(f.Origin, [varValue, delimElement])); // TODO: some types will need to be printed differently
+        newStmts.Add(daikonValue);
         return newStmts;
     }
     

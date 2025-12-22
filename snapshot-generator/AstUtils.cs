@@ -79,12 +79,12 @@ public static class AstUtils
     /// ----------------------------------------------------
     /// New methods for the creation of resolved expressions
     /// ----------------------------------------------------
-    public static void ResolveNameSegment(NameSegment nSegExpr, Type type, IVariable? var, MemberDecl? field, TopLevelDeclWithMembers enclosingClass) {
+    public static void ResolveNameSegment(NameSegment nSegExpr, Type type, IVariable? var, MemberDecl? field, TopLevelDeclWithMembers? enclosingClass = null) {
         nSegExpr.Type = type;
         Expression resolvedExpr;
         if (var != null) {
             resolvedExpr = new IdentifierExpr(nSegExpr.Origin, var);
-        } else if (field != null) {
+        } else if (field != null && enclosingClass != null) {
             resolvedExpr = CreateMemberSelectExpr(nSegExpr.Origin, field, enclosingClass);
         } else {
             return;
