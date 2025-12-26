@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.Dafny;
 using Type = Microsoft.Dafny.Type;
 
@@ -92,20 +93,30 @@ public static class AstUtils
         nSegExpr.ResolvedExpression = resolvedExpr;
     }
 
-    public static MemberSelectExpr CreateMemberSelectExpr(IOrigin token, MemberDecl call, TopLevelDeclWithMembers enclosingClass) {
-        Expression obj;
-        if (enclosingClass is DefaultClassDecl) {
-            obj = new StaticReceiverExpr(token, enclosingClass, true);
-        } else {
-            obj = new ImplicitThisExpr(token);
-            var className = new NameSegment(token, enclosingClass.Name, []);
-            obj.Type = new UserDefinedType(token, enclosingClass.Name, enclosingClass, [], className);
+    public static MemberSelectExpr? CreateMemberSelectExpr(IOrigin token, MemberDecl call, TopLevelDeclWithMembers? enclosingClass, Expression? obj = null) {
+        Expression? myObj = null;
+        if (enclosingClass != null) {
+            if (enclosingClass is DefaultClassDecl) {
+                myObj = new StaticReceiverExpr(token, enclosingClass, true);
+            } else {
+                myObj = new ImplicitThisExpr(token);
+                var className = new NameSegment(token, enclosingClass.Name, []);
+                myObj.Type = new UserDefinedType(token, enclosingClass.Name, enclosingClass, [], className);
+            } 
         }
-        
-        return new MemberSelectExpr(token, obj, call.NameNode) {
+
+        if (myObj == null && obj == null) return null;
+        return new MemberSelectExpr(token, obj ?? myObj, call.NameNode) {
             Member = call,
             TypeApplicationJustMember = []
         };
+    }
+
+    public static SpecialField CreateLengthSpecialField(IOrigin token, int? param = null) {
+        return new SpecialField(
+            token, "Length", SpecialField.ID.ArrayLength, param, 
+            false, false, false, Type.Int, null
+        );
     }
     
     /// ---------------------------------------------------

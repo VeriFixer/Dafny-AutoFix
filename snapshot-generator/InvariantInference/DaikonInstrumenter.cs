@@ -165,21 +165,10 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
         _newStmts.Add(new PrintStmt(token, [declarationElement]));
         declarationElement = AstUtils.CreateStringLiteral(token, $"\tdec-type {f.Type}\\n");
         _newStmts.Add(new PrintStmt(token, [declarationElement]));
-        var repType = "\trep-type " + f.Type.ToString() switch {
-            "int" or "nat" => "int\\n",
-            "real" => "double\\n",
-            "bool" => "boolean\\n",
-            "char" or "string" => "java.lang.String\\n",
-            _ => "hashcode\\n"
-        };
+        var repType = "\trep-type " + $"{DaikonFormatConverter.ToType(f.Type)}\\n";
         declarationElement = AstUtils.CreateStringLiteral(token, repType);
         _newStmts.Add(new PrintStmt(token, [declarationElement]));
-        var comparability = "\tcomparability " + f.Type.ToString() switch {
-            "bool" => "1\\n",
-            "int" or "nat" or "real" => "2\\n",
-            "char" or "string" => "3\\n",
-            _ => "20\\n"
-        };
+        var comparability = "\tcomparability " + $"{DaikonFormatConverter.GetComparability(f.Type)}\\n";
         declarationElement = AstUtils.CreateStringLiteral(token, comparability);
         _newStmts.Add(new PrintStmt(token, [declarationElement]));
     }
@@ -223,11 +212,10 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
     }
 
     private List<Statement> AddVariableTracePoint(Method method, Formal f) {
-        var daikonValue = DaikonFormatConverter.ToDaikonValue(
-            method.Origin, f, (TopLevelDeclWithMembers)method.EnclosingClass
-        );
+        var daikonValue = DaikonFormatConverter.ToDaikonValue(method.Origin, f);
         if (daikonValue == null)
             return [];
+        
         List<Statement> newStmts = [];
         // Print the name of the variable
         var varIdentification = AstUtils.CreateStringLiteral(method.Origin, $"{f.CompileName}\\n");
