@@ -81,8 +81,8 @@ public static class DaikonFormatConverter
 
     // applies to both Dafny sequences and arrays
     private static BlockStmt ToListValue(IOrigin token, Formal f, Expression listExpr, Expression listLengthExpr) {
-        var loopBoundVar = new BoundVar(token, $"{Convert.ToChar(105) + _outerLoopCount}", Type.Int);
-        var loopBound = new NameSegment(token, $"{Convert.ToChar(105) + _outerLoopCount}", null);
+        var loopBoundVar = new BoundVar(token, $"{Convert.ToChar(105 + _outerLoopCount)}", Type.Int);
+        var loopBound = new NameSegment(token, $"{Convert.ToChar(105 + _outerLoopCount)}", null);
         AstUtils.ResolveNameSegment(loopBound, Type.Int, loopBoundVar, null);
         
         var listIndexSelector = new SeqSelectExpr(token, true, listExpr, loopBound, null);
@@ -109,7 +109,7 @@ public static class DaikonFormatConverter
     }
     
     private static BlockStmt ToMultiDimArrayValue(IOrigin token, Formal f, Expression? expr = null) {
-        var arrayDims = f.Type.AsArrayType.Dims;
+        var arrayDims = expr != null ? expr.Type.AsArrayType.Dims : f.Type.AsArrayType.Dims;
         var varValue = new NameSegment(f.Origin, f.Name, null);
         AstUtils.ResolveNameSegment(varValue, f.Type, f, null);
 
@@ -117,25 +117,27 @@ public static class DaikonFormatConverter
         List<Expression> bounds = [];
         List<ExprDotName> arrLengthExprs = [];
         for (var i = 0; i < arrayDims; i++) {
-            var loopBoundVar = new BoundVar(token, $"{Convert.ToChar(105) + i}", Type.Int);
+            var loopBoundVar = new BoundVar(token, $"{Convert.ToChar(105 + i + _outerLoopCount)}", Type.Int);
             boundVars.Add(loopBoundVar);
-            var loopBound = new NameSegment(token, $"{Convert.ToChar(105) + i}", null);
+            var loopBound = new NameSegment(token, $"{Convert.ToChar(105 + i + _outerLoopCount)}", null);
             AstUtils.ResolveNameSegment(loopBound, Type.Int, loopBoundVar, null);
             bounds.Add(loopBound);
             var lengthMethod = new Name(token, "Length");
-            var arrLengthExpr = new ExprDotName(token, varValue, lengthMethod, null) {
+            var arrLengthExpr = new ExprDotName(token, expr ?? varValue, lengthMethod, null) {
                 ResolvedExpression = AstUtils.CreateMemberSelectExpr(
-                    token, AstUtils.CreateLengthSpecialField(token, i), null, varValue
+                    token, AstUtils.CreateLengthSpecialField(token, i), null, expr ??varValue
                 )
             };
             arrLengthExprs.Add(arrLengthExpr);
         }
         
-        var listIndexSelector = new MultiSelectExpr(token, varValue, bounds) {
-            Type = ((UserDefinedType)f.Type).TypeArgs[0]
+        var listIndexSelector = new MultiSelectExpr(token, expr ?? varValue, bounds) {
+            Type = expr != null ? ((UserDefinedType)expr.Type).TypeArgs[0] : ((UserDefinedType)f.Type).TypeArgs[0]
         };
         var delimElement = AstUtils.CreateStringLiteral(token, " ");
+        _outerLoopCount += arrayDims;
         var listIndexPrinter = ToDaikonValue(token, f, listIndexSelector, delimElement);
+        _outerLoopCount -= arrayDims;
         var openArrayElem = AstUtils.CreateStringLiteral(token, "[ ");
         var printOpenArray = new PrintStmt(token, [openArrayElem]);
         var closeArrayElem = AstUtils.CreateStringLiteral(token, $"] ");
@@ -149,7 +151,7 @@ public static class DaikonFormatConverter
                 new BlockStmt(token, loopBody), null);
             loopBody = [printOpenArray, loop, printCloseArray];
         }
-        delimElement = AstUtils.CreateStringLiteral(token, $"\\n");
+        delimElement = AstUtils.CreateStringLiteral(token, $"{(_outerLoopCount == 0 ? "\\n" : " ")}");
         var printDelim = new PrintStmt(token, [delimElement]);
         loopBody.Add(printDelim);
         return new BlockStmt(token, loopBody);
