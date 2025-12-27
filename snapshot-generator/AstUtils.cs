@@ -118,10 +118,18 @@ public static class AstUtils
             false, false, false, Type.Int, null
         );
     }
-    
+
     /// ---------------------------------------------------
     /// New methods for the creation of resolved statements
     /// ---------------------------------------------------
+    public static void ResolveNormalAssignStatement(AssignStatement aStmt) {
+        aStmt.ResolvedStatements = [];
+        for (var i = 0; i < aStmt.Lhss.Count; i++) {
+          var resolvedAssign = new SingleAssignStmt(aStmt.Origin, aStmt.Lhss[i].Resolved, aStmt.Rhss[i]);
+          aStmt.ResolvedStatements.Add(resolvedAssign);
+        }
+    }
+    
     public static void ResolveCallAssignStatement(AssignStatement aStmt, Method call, List<Expression> args, TopLevelDeclWithMembers enclosingClass) {
         if (!(aStmt.Rhss.Count == 1 && aStmt.Rhss[0] is ExprRhs exprRhs && 
               exprRhs.Expr is ApplySuffix appSufExpr))
@@ -130,5 +138,14 @@ public static class AstUtils
         var memberSelectExpr = CreateMemberSelectExpr(appSufExpr.Origin, call, enclosingClass);
         var resolvedStmt = new CallStmt(aStmt.Origin, [], memberSelectExpr, args);
         aStmt.ResolvedStatements = [resolvedStmt];
+    }
+
+    public static void ResolveAssignSuchThatStatement(AssignSuchThatStmt aStStmt) {
+        var varLhss = new List<IVariable>();
+        foreach (var lhs in aStStmt.Lhss) {
+            var ide = (IdentifierExpr)lhs.Resolved;
+            varLhss.Add(ide.Var);
+        } 
+        aStStmt.Bounds = ModuleResolver.DiscoverBestBounds_MultipleVars(varLhss, aStStmt.Expr, true);
     }
 }

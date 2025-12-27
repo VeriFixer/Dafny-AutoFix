@@ -6,7 +6,7 @@ namespace SnapshotGenerator.InvariantInference;
 
 public static class DaikonFormatConverter
 {
-    private static int _outerLoopCount = 0;
+    private static int _outerLoopCount;
     
     /// -------------------------
     /// Values
@@ -20,6 +20,8 @@ public static class DaikonFormatConverter
             var t when t.StartsWith("seq<") => ToSequenceValue(token, f, expr),
             var t when t.StartsWith("array<") => ToArrayValue(token, f, expr),
             var t when t.StartsWith("array") => ToMultiDimArrayValue(token, f, expr),
+            var t when t.StartsWith("set<") => ToSetValue(token, f, expr),
+            var t when t.StartsWith("multiset<") => ToSetValue(token, f, expr),
             _ => null
         };
     }
@@ -95,7 +97,7 @@ public static class DaikonFormatConverter
         _outerLoopCount++;
         var listIndexPrinter = ToDaikonValue(token, f, listIndexSelector, delimElement);
         _outerLoopCount--;
-        var listIterator = new ForLoopStmt(token, loopBoundVar,
+        var loop = new ForLoopStmt(token, loopBoundVar,
             Expression.CreateIntLiteral(token, 0), listLengthExpr,
             true, [], new Specification<Expression>(),
             new Specification<FrameExpression>(),
@@ -105,7 +107,7 @@ public static class DaikonFormatConverter
         var printOpenArray = new PrintStmt(token, [openArrayElem]);
         var closeArrayElem = AstUtils.CreateStringLiteral(token, $"]{(_outerLoopCount == 0 ? "\\n" : " ")}");
         var printCloseArray = new PrintStmt(token, [closeArrayElem]);
-        return new BlockStmt(token, [printOpenArray, listIterator, printCloseArray]);
+        return new BlockStmt(token, [printOpenArray, loop, printCloseArray]);
     }
     
     private static BlockStmt ToMultiDimArrayValue(IOrigin token, Formal f, Expression? expr = null) {
@@ -151,10 +153,56 @@ public static class DaikonFormatConverter
                 new BlockStmt(token, loopBody), null);
             loopBody = [printOpenArray, loop, printCloseArray];
         }
+        
         delimElement = AstUtils.CreateStringLiteral(token, $"{(_outerLoopCount == 0 ? "\\n" : " ")}");
         var printDelim = new PrintStmt(token, [delimElement]);
         loopBody.Add(printDelim);
         return new BlockStmt(token, loopBody);
+    }
+
+    private static BlockStmt ToSetValue(IOrigin token, Formal f, Expression? expr = null) {
+        var varValue = new NameSegment(f.Origin, f.Name, null);
+        AstUtils.ResolveNameSegment(varValue, f.Type, f, null);
+        var setType = (expr ?? varValue).Type;
+        var setArgType = setType is SetType type ? type.Arg : ((MultiSetType)setType).Arg;
+        var setClone = Statement.CreateLocalVariable(token, $"{f.Name}{_outerLoopCount}'", expr ?? varValue);
+        var cloneVarValue = new NameSegment(f.Origin, $"{f.Name}{_outerLoopCount}'", null);
+        AstUtils.ResolveNameSegment(cloneVarValue, setType, setClone.Locals[0], null);
+
+        var emptySet = CreateSetDisplay(token, setType, []);
+        var loopGuard = AstUtils.CreateNeq(cloneVarValue, emptySet, setType);
+        // var e :| e in my_set';
+        var setElemSelector = Statement.CreateLocalVariable(token, $"{f.Name}{_outerLoopCount}_elem", setArgType);
+        var setElemVarValue = new NameSegment(token, $"{f.Name}{_outerLoopCount}_elem", null);
+        AstUtils.ResolveNameSegment(setElemVarValue, setArgType, setElemSelector.Locals[0], null);
+        var setElemSelectorExpr = AstUtils.CreateIn(setElemVarValue, cloneVarValue, setType);
+        setElemSelector.Assign = new AssignSuchThatStmt(token, [setElemVarValue], setElemSelectorExpr, null, null);
+        AstUtils.ResolveAssignSuchThatStatement((AssignSuchThatStmt)setElemSelector.Assign);
+        // print e, " ";
+        var delimElement = AstUtils.CreateStringLiteral(token, " ");
+        _outerLoopCount++;
+        var setElemPrinter = ToDaikonValue(token, f, setElemVarValue, delimElement);
+        _outerLoopCount--;
+        // sett' := sett' - { e };
+        var elemSubset = CreateSetDisplay(token, setType, [setElemVarValue]);
+        var setElemRemoverExpr = new ExprRhs(Expression.CreateSetDifference(cloneVarValue, elemSubset));
+        var setElemRemover = new AssignStatement(token, [cloneVarValue], [setElemRemoverExpr], false);
+        AstUtils.ResolveNormalAssignStatement(setElemRemover);
+
+        List<Statement> loopBody = setElemPrinter != null ? 
+            [setElemSelector, setElemPrinter, setElemRemover] : 
+            [setElemSelector, setElemRemover];
+        var loop = new WhileStmt(token, loopGuard, [], 
+            new Specification<Expression>(),
+            new Specification<FrameExpression>(), 
+            new BlockStmt(token, loopBody)
+        );
+        
+        var openArrayElem = AstUtils.CreateStringLiteral(token, "[ ");
+        var printOpenArray = new PrintStmt(token, [openArrayElem]);
+        var closeArrayElem = AstUtils.CreateStringLiteral(token, $"]{(_outerLoopCount == 0 ? "\\n" : " ")}");
+        var printCloseArray = new PrintStmt(token, [closeArrayElem]);
+        return new BlockStmt(token, [setClone, printOpenArray, loop, printCloseArray]);
     }
 
     /// -------------------------
@@ -235,5 +283,11 @@ public static class DaikonFormatConverter
         var delimElement = AstUtils.CreateStringLiteral(token, "\\n");
         args.Add(delim ?? delimElement);
         return new PrintStmt(token, args);
+    }
+
+    private static DisplayExpression CreateSetDisplay(IOrigin token, Type type, List<Expression> elements) {
+        if (type is SetType)
+            return new SetDisplayExpr(token, true, elements) { Type = type };
+        return new MultiSetDisplayExpr(token, elements) { Type = type };
     }
 }
