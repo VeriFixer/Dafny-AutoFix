@@ -119,6 +119,13 @@ public static class AstUtils
         );
     }
 
+    public static SpecialField CreateKeysSpecialField(IOrigin token, Type argType) {
+        return new SpecialField(
+            token, "Keys", SpecialField.ID.Keys, null,
+            false, false, false, new SetType(true, argType), null
+        );
+    }
+
     /// ---------------------------------------------------
     /// New methods for the creation of resolved statements
     /// ---------------------------------------------------
