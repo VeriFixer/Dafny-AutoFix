@@ -156,7 +156,7 @@ public static class DaikonFormatConverter
             loopBody = [printOpenArray, loop, printCloseArray];
         }
         
-        delimElement = AstUtils.CreateStringLiteral(token, $"{(_outerLoopCount == 0 ? "\\n" : " ")}");
+        delimElement = AstUtils.CreateStringLiteral(token, $"{(_outerLoopCount == 0 ? "\\n" : "")}");
         var printDelim = new PrintStmt(token, [delimElement]);
         loopBody.Add(printDelim);
         return new BlockStmt(token, loopBody);
@@ -189,7 +189,7 @@ public static class DaikonFormatConverter
         _outerLoopCount++;
         var setElemPrinter = ToDaikonValue(token, f, setElemVarValue, delimElement);
         if (mapRange != null && expr != null)
-            setElemPrinter = ToMapElementValue(token, f, (NameSegment)((ExprDotName)expr).Lhs, setElemVarValue, mapRange, setElemPrinter);
+            setElemPrinter = ToMapElementValue(token, f, ((ExprDotName)expr).Lhs, setElemVarValue, mapRange, setElemPrinter);
         _outerLoopCount--;
         // sett' := sett' - { e };
         var elemSubset = CreateSetDisplay(token, setType, [setElemVarValue]);
@@ -220,7 +220,7 @@ public static class DaikonFormatConverter
 
         var mapDomainType = ((MapType)(expr ?? varValue).Type).Arg;
         var keysMethod = new Name(token, "Keys");
-        var mapKeysExpr = new ExprDotName(token, varValue, keysMethod, null) {
+        var mapKeysExpr = new ExprDotName(token, expr ?? varValue, keysMethod, null) {
             Type = new SetType(true, mapDomainType),
             ResolvedExpression = AstUtils.CreateMemberSelectExpr(
                 token, AstUtils.CreateKeysSpecialField(token, mapDomainType), null, varValue
@@ -236,13 +236,13 @@ public static class DaikonFormatConverter
         var stringDelimElem = AstUtils.CreateStringLiteral(token, "\\\"");
         var printStringDelim = new PrintStmt(token, [stringDelimElem]);
         mapPrinter.Body.Insert(0, printStringDelim);
-        stringDelimElem = AstUtils.CreateStringLiteral(token, $"{(_outerLoopCount == 0 ? "\\\"\\n" : " ")}");
+        stringDelimElem = AstUtils.CreateStringLiteral(token, $"{(_outerLoopCount == 0 ? "\\\"\\n" : "\\\"")}");
         printStringDelim = new PrintStmt(token, [stringDelimElem]);
         mapPrinter.Body.Add(printStringDelim);
         return mapPrinter;
     }
 
-    private static BlockStmt ToMapElementValue(IOrigin token, Formal f, NameSegment mapVarValue, NameSegment mapKeyVarValue, Type mapKeysType, Statement? mapKeyPrinter) {
+    private static BlockStmt ToMapElementValue(IOrigin token, Formal f, Expression mapVarValue, Expression mapKeyVarValue, Type mapKeysType, Statement? mapKeyPrinter) {
         var openArrayElem = AstUtils.CreateStringLiteral(token, "[ ");
         var printOpenArray = new PrintStmt(token, [openArrayElem]);
         var closeArrayElem = AstUtils.CreateStringLiteral(token, "] ");
