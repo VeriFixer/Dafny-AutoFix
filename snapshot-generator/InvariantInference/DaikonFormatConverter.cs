@@ -322,6 +322,12 @@ public static class DaikonFormatConverter
         return "10[" + arrayElementComp + "]";
     }
 
+    public static bool IsArrayType(Type type) {
+        var t = type.ToString();
+        return t.StartsWith("seq<") || t.StartsWith("set<") || 
+               t.StartsWith("multiset<") || t.StartsWith("array");
+    }
+
     private static int NumDimensions(Type type) {
         var numDimensions = 0;
         numDimensions += type.ToString().Count(x => x == '<');

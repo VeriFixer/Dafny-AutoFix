@@ -163,7 +163,9 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
         var comparability = DaikonFormatConverter.GetComparability(f.Type);
         if (repType == "" || comparability == "") return;
         
-        var declarationElement = AstUtils.CreateStringLiteral(token, $"variable {f.CompileName}\\n");
+        var declarationElement = AstUtils.CreateStringLiteral(token, 
+            $"variable {f.CompileName}{(DaikonFormatConverter.IsArrayType(f.Type) ? "[..]" : "")}\\n"
+        );
         _newStmts.Add(new PrintStmt(token, [declarationElement]));
         declarationElement = AstUtils.CreateStringLiteral(token, "\tvar-kind variable\\n");
         _newStmts.Add(new PrintStmt(token, [declarationElement]));
@@ -222,10 +224,16 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
         
         List<Statement> newStmts = [];
         // Print the name of the variable
-        var varIdentification = AstUtils.CreateStringLiteral(method.Origin, $"{f.CompileName}\\n");
+        var varIdentification = AstUtils.CreateStringLiteral(method.Origin, 
+            $"{f.CompileName}{(DaikonFormatConverter.IsArrayType(f.Type) ? "[..]" : "")}\\n"
+        );
         newStmts.Add(new PrintStmt(method.Origin, [varIdentification]));
         // Print the value of the variable
         newStmts.Add(daikonValue);
+        // Print the modified bit
+        var modBit = Expression.CreateIntLiteral(method.Origin, 0);
+        var delimElement = AstUtils.CreateStringLiteral(method.Origin, "\\n");
+        newStmts.Add(new PrintStmt(method.Origin, [modBit, delimElement]));
         return newStmts;
     }
     
