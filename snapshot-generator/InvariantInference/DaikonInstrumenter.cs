@@ -159,16 +159,20 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
     }
 
     private void AddVariableDeclaration(Formal f, IOrigin token) {
+        var repType = DaikonFormatConverter.ToType(f.Type);
+        var comparability = DaikonFormatConverter.GetComparability(f.Type);
+        if (repType == "" || comparability == "") return;
+        
         var declarationElement = AstUtils.CreateStringLiteral(token, $"variable {f.CompileName}\\n");
         _newStmts.Add(new PrintStmt(token, [declarationElement]));
         declarationElement = AstUtils.CreateStringLiteral(token, "\tvar-kind variable\\n");
         _newStmts.Add(new PrintStmt(token, [declarationElement]));
         declarationElement = AstUtils.CreateStringLiteral(token, $"\tdec-type {f.Type}\\n");
         _newStmts.Add(new PrintStmt(token, [declarationElement]));
-        var repType = "\trep-type " + $"{DaikonFormatConverter.ToType(f.Type)}\\n";
+        repType = "\trep-type " + $"{repType}\\n";
         declarationElement = AstUtils.CreateStringLiteral(token, repType);
         _newStmts.Add(new PrintStmt(token, [declarationElement]));
-        var comparability = "\tcomparability " + $"{DaikonFormatConverter.GetComparability(f.Type)}\\n";
+        comparability = "\tcomparability " + $"{comparability}\\n";
         declarationElement = AstUtils.CreateStringLiteral(token, comparability);
         _newStmts.Add(new PrintStmt(token, [declarationElement]));
     }

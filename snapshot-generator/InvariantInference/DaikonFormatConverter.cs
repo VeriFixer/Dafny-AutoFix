@@ -274,20 +274,22 @@ public static class DaikonFormatConverter
                t.StartsWith("set<") || t.StartsWith("multiset<") ||
                t.StartsWith("array") => ToArrayType(type),
             var t when t.StartsWith("map<") => "java.lang.String", // TODO: is there a better way to represent it?
-            _ => "hashcode"
+            _ => ""
         };
     }
     
-    private static String ToArrayType(Type type) {
-        return type switch {
+    private static String ToArrayType(Type type) { 
+        var arrayType = type switch {
             SeqType seqType => ToType(seqType.Arg),
             SetType setType => ToType(setType.Arg),
             MultiSetType msetType => ToType(msetType.Arg),
             UserDefinedType uType => ToType(uType.TypeArgs[0]) + 
                 new StringBuilder(2 * (type.AsArrayType.Dims - 1))
                     .Insert(0, "[]", type.AsArrayType.Dims - 1),
-            _ => "hashcode"
-        } + "[]";
+            _ => ""
+        };
+        if (arrayType == "") return "";
+        return arrayType + "[]";
     }
     
     public static String GetComparability(Type type) {
@@ -299,7 +301,7 @@ public static class DaikonFormatConverter
                t.StartsWith("set<") || t.StartsWith("multiset<") ||
                t.StartsWith("array") => GetArrayComparability(type),
             var t when t.StartsWith("map<") => "4",
-            _ => "15"
+            _ => ""
         };
     }
     
@@ -309,8 +311,9 @@ public static class DaikonFormatConverter
             SetType setType => GetComparability(setType.Arg),
             MultiSetType msetType => GetComparability(msetType.Arg),
             UserDefinedType uType => GetComparability(uType.TypeArgs[0]),
-            _ => "hashcode"
+            _ => ""
         };
+        if (arrayElementComp == "") return "";
         var numDimensions = NumDimensions(type);
         if (numDimensions > 1) {
             var compParts = arrayElementComp.Split("[");
