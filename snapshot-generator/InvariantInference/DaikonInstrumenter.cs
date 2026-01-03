@@ -169,7 +169,7 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
         _newStmts.Add(new PrintStmt(token, [declarationElement]));
         declarationElement = AstUtils.CreateStringLiteral(token, "\tvar-kind variable\\n");
         _newStmts.Add(new PrintStmt(token, [declarationElement]));
-        declarationElement = AstUtils.CreateStringLiteral(token, $"\tdec-type {f.Type}\\n");
+        declarationElement = AstUtils.CreateStringLiteral(token, $"\tdec-type {f.Type.ToString().Replace(" ", "")}\\n");
         _newStmts.Add(new PrintStmt(token, [declarationElement]));
         repType = "\trep-type " + $"{repType}\\n";
         declarationElement = AstUtils.CreateStringLiteral(token, repType);

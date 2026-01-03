@@ -67,7 +67,21 @@ public static class DaikonFormatConverter
         var seqLengthExpr = new UnaryOpExpr(token, UnaryOpExpr.Opcode.Cardinality, expr ?? varValue) {
             Type = Type.Int
         };
-        return ToListValue(token, f, expr ?? varValue, seqLengthExpr);
+        var prevShouldEscapeQuotes = _shouldEscapeQuotes;
+        if (NumDimensions((expr ?? varValue).Type) > 1)
+            _shouldEscapeQuotes = true;
+        var seqPrinter = ToListValue(token, f, expr ?? varValue, seqLengthExpr);
+        _shouldEscapeQuotes = prevShouldEscapeQuotes;
+
+        if (NumDimensions((expr ?? varValue).Type) > 1 && !_shouldEscapeQuotes) {
+            var stringDelimElem = AstUtils.CreateStringLiteral(token, "\\\"");
+            var printStringDelim = new PrintStmt(token, [stringDelimElem]);
+            seqPrinter.Body.Insert(0, printStringDelim);
+            stringDelimElem = AstUtils.CreateStringLiteral(token, $"{(_outerLoopCount == 0 ? "\\\"\\n" : "\\\"")}");
+            printStringDelim = new PrintStmt(token, [stringDelimElem]);
+            seqPrinter.Body.Add(printStringDelim);
+        }
+        return seqPrinter;
     }
 
     private static BlockStmt ToArrayValue(IOrigin token, Formal f, Expression? expr = null) {
@@ -80,7 +94,21 @@ public static class DaikonFormatConverter
                 token, AstUtils.CreateLengthSpecialField(token), null, varValue
             )
         };
-        return ToListValue(token, f, expr ?? varValue, arrLengthExpr);
+        var prevShouldEscapeQuotes = _shouldEscapeQuotes;
+        if (NumDimensions((expr ?? varValue).Type) > 1)
+            _shouldEscapeQuotes = true;
+        var arrayPrinter = ToListValue(token, f, expr ?? varValue, arrLengthExpr);
+        _shouldEscapeQuotes = prevShouldEscapeQuotes;
+
+        if (NumDimensions((expr ?? varValue).Type) > 1 && !_shouldEscapeQuotes) {
+            var stringDelimElem = AstUtils.CreateStringLiteral(token, "\\\"");
+            var printStringDelim = new PrintStmt(token, [stringDelimElem]);
+            arrayPrinter.Body.Insert(0, printStringDelim);
+            stringDelimElem = AstUtils.CreateStringLiteral(token, $"{(_outerLoopCount == 0 ? "\\\"\\n" : "\\\"")}");
+            printStringDelim = new PrintStmt(token, [stringDelimElem]);
+            arrayPrinter.Body.Add(printStringDelim);
+        }
+        return arrayPrinter;
     }
 
     // applies to both Dafny sequences and arrays
@@ -107,7 +135,8 @@ public static class DaikonFormatConverter
         
         var openArrayElem = AstUtils.CreateStringLiteral(token, "[ ");
         var printOpenArray = new PrintStmt(token, [openArrayElem]);
-        var closeArrayElem = AstUtils.CreateStringLiteral(token, $"]{(_outerLoopCount == 0 ? "\\n" : " ")}");
+        var closeArrayElem = AstUtils.CreateStringLiteral(token, $"]" + 
+            $"{((_outerLoopCount == 0 && !_shouldEscapeQuotes) ? "\\n" : _outerLoopCount == 0 ? "" : " ")}");
         var printCloseArray = new PrintStmt(token, [closeArrayElem]);
         return new BlockStmt(token, [printOpenArray, loop, printCloseArray]);
     }
@@ -140,7 +169,10 @@ public static class DaikonFormatConverter
         };
         var delimElement = AstUtils.CreateStringLiteral(token, " ");
         _outerLoopCount += arrayDims;
+        var prevShouldEscapeQuotes = _shouldEscapeQuotes;
+        _shouldEscapeQuotes = true;
         var listIndexPrinter = ToDaikonValue(token, f, listIndexSelector, delimElement);
+        _shouldEscapeQuotes = prevShouldEscapeQuotes;
         _outerLoopCount -= arrayDims;
         var openArrayElem = AstUtils.CreateStringLiteral(token, "[ ");
         var printOpenArray = new PrintStmt(token, [openArrayElem]);
@@ -153,12 +185,22 @@ public static class DaikonFormatConverter
                 true, [], new Specification<Expression>(),
                 new Specification<FrameExpression>(),
                 new BlockStmt(token, loopBody), null);
+
+            if (i == 0 && !_shouldEscapeQuotes) {
+                closeArrayElem = AstUtils.CreateStringLiteral(token, $"]");
+                printCloseArray = new PrintStmt(token, [closeArrayElem]);
+            }
             loopBody = [printOpenArray, loop, printCloseArray];
         }
         
-        delimElement = AstUtils.CreateStringLiteral(token, $"{(_outerLoopCount == 0 ? "\\n" : "")}");
-        var printDelim = new PrintStmt(token, [delimElement]);
-        loopBody.Add(printDelim);
+        if (!_shouldEscapeQuotes) {
+            var stringDelimElem = AstUtils.CreateStringLiteral(token, "\\\"");
+            var printStringDelim = new PrintStmt(token, [stringDelimElem]);
+            loopBody.Insert(0, printStringDelim);
+            stringDelimElem = AstUtils.CreateStringLiteral(token, $"{(_outerLoopCount == 0 ? "\\\"\\n" : "\\\"")}");
+            printStringDelim = new PrintStmt(token, [stringDelimElem]);
+            loopBody.Add(printStringDelim);
+        }
         return new BlockStmt(token, loopBody);
     }
 
@@ -187,9 +229,13 @@ public static class DaikonFormatConverter
         // print e, " ";
         var delimElement = AstUtils.CreateStringLiteral(token, " ");
         _outerLoopCount++;
+        var prevShouldEscapeQuotes = _shouldEscapeQuotes;
+        if (NumDimensions((expr ?? varValue).Type) > 1)
+            _shouldEscapeQuotes = true;
         var setElemPrinter = ToDaikonValue(token, f, setElemVarValue, delimElement);
         if (mapRange != null && expr != null)
             setElemPrinter = ToMapElementValue(token, f, ((ExprDotName)expr).Lhs, setElemVarValue, mapRange, setElemPrinter);
+        _shouldEscapeQuotes = prevShouldEscapeQuotes;
         _outerLoopCount--;
         // sett' := sett' - { e };
         var elemSubset = CreateSetDisplay(token, setType, [setElemVarValue]);
@@ -205,13 +251,24 @@ public static class DaikonFormatConverter
             new Specification<FrameExpression>(), 
             new BlockStmt(token, loopBody)
         );
-        
+
+        var numDimensions = NumDimensions((expr ?? varValue).Type);
         var openArrayElem = AstUtils.CreateStringLiteral(token, "[ ");
         var printOpenArray = new PrintStmt(token, [openArrayElem]);
-        var closeArrayElem = AstUtils.CreateStringLiteral(
-            token, $"]{(_outerLoopCount == 0 ? (mapRange == null ? "\\n" : "") : " ")}");
+        var closeArrayElem = AstUtils.CreateStringLiteral(token, "]" +
+            $"{((_outerLoopCount == 0 && numDimensions == 1 && !_shouldEscapeQuotes) ?
+                (mapRange == null ? "\\n" : "") : (_outerLoopCount == 0 ? "" : " "))}");
         var printCloseArray = new PrintStmt(token, [closeArrayElem]);
-        return new BlockStmt(token, [setClone, printOpenArray, loop, printCloseArray]);
+        List<Statement> blockBody = [setClone, printOpenArray, loop, printCloseArray];
+        if (numDimensions > 1 && !_shouldEscapeQuotes) {
+            var stringDelimElem = AstUtils.CreateStringLiteral(token, "\\\"");
+            var printStringDelim = new PrintStmt(token, [stringDelimElem]);
+            blockBody.Insert(1, printStringDelim);
+            stringDelimElem = AstUtils.CreateStringLiteral(token, $"{(_outerLoopCount == 0 ? "\\\"\\n" : "\\\"")}");
+            printStringDelim = new PrintStmt(token, [stringDelimElem]);
+            blockBody.Add(printStringDelim);
+        }
+        return new BlockStmt(token, blockBody);
     }
 
     private static BlockStmt ToMapValue(IOrigin token, Formal f, Expression? expr = null) {
@@ -278,7 +335,10 @@ public static class DaikonFormatConverter
         };
     }
     
-    private static String ToArrayType(Type type) { 
+    private static String ToArrayType(Type type) {
+        if (NumDimensions(type) > 1)
+            return "java.lang.String"; // TODO: is there a better way to represent it?
+        
         var arrayType = type switch {
             SeqType seqType => ToType(seqType.Arg),
             SetType setType => ToType(setType.Arg),
@@ -317,7 +377,7 @@ public static class DaikonFormatConverter
         var numDimensions = NumDimensions(type);
         if (numDimensions > 1) {
             var compParts = arrayElementComp.Split("[");
-            return (10 * numDimensions) + "[" + compParts[^1][0] + "]";
+            return $"{10 * numDimensions + int.Parse($"{compParts[^1][0]}")}";
         }
         return "10[" + arrayElementComp + "]";
     }
