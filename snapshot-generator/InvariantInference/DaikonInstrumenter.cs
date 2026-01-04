@@ -18,6 +18,7 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
             return;
         var mainMethod = InvariantInferrer.MainMethod;
         var faultyMethod = InvariantInferrer.FaultyMethod;
+        AdjustTestExecution(mainMethod);
         
         AddHeader();
         AddMethodDeclaration(faultyMethod);
@@ -116,6 +117,19 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
         ) { EnclosingClass = _currentTopLevelDecl };
         _newMethods.Add(newMethod);
         return newMethod;
+    }
+    
+    private void AdjustTestExecution(Method method) {
+        if (method.Body == null) return;
+        foreach (var (stmt, i) in method.Body.Body.Select((stmt, i) => (stmt, i))) {
+            if (stmt is not AssignStatement { Rhss: [ExprRhs { Expr: ApplySuffix { Lhs: NameSegment nSegExpr} }] })
+                continue;
+            if ((InvariantInferrer.PassingInvariantInference && nSegExpr.Name == "Failing") ||
+                (!InvariantInferrer.PassingInvariantInference && nSegExpr.Name == "Passing")) {
+                method.Body.Body.RemoveAt(i);
+                break;
+            }
+        }
     }
 
     /// -------------------------

@@ -12,6 +12,7 @@ public class SnapshotGenerator : PluginConfiguration
     public static int ViolationColumn { get; private set; }
     private bool _enumeration;
     private bool _invariantInference;
+    private bool _passingInvariantInference;
     
     public override void ParseArguments(string[] args) {
         if (args.Length < 3) return;
@@ -19,14 +20,16 @@ public class SnapshotGenerator : PluginConfiguration
         ViolationColumn = int.Parse(args[1]);
         if (args[2] == "enum") {
             _enumeration = true;
-        } else if (args[2] == "inv") { 
+        } else if (args[2] == "inv_pass" || args[2] == "inv_fail") { 
             _invariantInference = true;
+            if (args[2] == "inv_pass")
+                _passingInvariantInference = true;
         }
     }
     
    public override Rewriter[] GetRewriters(ErrorReporter reporter) { 
        return _enumeration ? [new Enumerator(reporter)] : 
-            (_invariantInference ? [new InvariantInferrer(reporter)] : []);
+            (_invariantInference ? [new InvariantInferrer(reporter, _passingInvariantInference)] : []);
    }
 }
 
@@ -64,10 +67,15 @@ public class Enumerator(ErrorReporter reporter) : Rewriter(reporter)
     }
 }
 
-public class InvariantInferrer(ErrorReporter reporter) : Rewriter(reporter)
+public class InvariantInferrer : Rewriter
 {
     public static Method? FaultyMethod { get; set; }
     public static Method? MainMethod { get; set; }
+    public static bool PassingInvariantInference { get; private set; }
+    
+    public InvariantInferrer(ErrorReporter reporter, bool passingInvariantInference) : base(reporter) {
+        PassingInvariantInference = passingInvariantInference;
+    }
     
     public override void PostResolve(ModuleDefinition module) {
         if (module.Name != "_module") 
