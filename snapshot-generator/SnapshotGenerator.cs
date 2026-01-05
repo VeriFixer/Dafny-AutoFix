@@ -12,6 +12,7 @@ public class SnapshotGenerator : PluginConfiguration
     public static int ViolationColumn { get; private set; }
     private bool _enumeration;
     private bool _invariantInference;
+    private bool _invariantParsing;
     private bool _passingInvariantInference;
     
     public override void ParseArguments(string[] args) {
@@ -24,12 +25,27 @@ public class SnapshotGenerator : PluginConfiguration
             _invariantInference = true;
             if (args[2] == "inv_pass")
                 _passingInvariantInference = true;
+        } else if (args[2] == "inv") {
+            _invariantParsing = true;
         }
     }
     
    public override Rewriter[] GetRewriters(ErrorReporter reporter) { 
        return _enumeration ? [new Enumerator(reporter)] : 
-            (_invariantInference ? [new InvariantInferrer(reporter, _passingInvariantInference)] : []);
+            (_invariantInference ? [new InvariantInferrer(reporter, _passingInvariantInference)] : 
+            (_invariantParsing ? [new InvariantParser(reporter)] : []));
+   }
+
+   public static void SaveInstrumentedProgram(Program program) {
+       // save instrumented program
+       var stringWriter = new StringWriter();
+       var printer = new Printer(stringWriter, program.Options, PrintModes.Serialization);
+       printer.PrintProgram(program, false);
+       var programText = stringWriter.ToString();
+
+       var filename = Path.GetFileNameWithoutExtension(program.Name);
+       filename += "_instrumented.dfy";
+       File.WriteAllText(filename, programText);
    }
 }
 
@@ -55,15 +71,7 @@ public class Enumerator(ErrorReporter reporter) : Rewriter(reporter)
     }
     
     public override void PostResolve(Program program) {
-        // save instrumented program
-        var stringWriter = new StringWriter();
-        var printer = new Printer(stringWriter, program.Options, PrintModes.Serialization);
-        printer.PrintProgram(program, false);
-        var programText = stringWriter.ToString();
-
-        var filename = Path.GetFileNameWithoutExtension(program.Name);
-        filename += "_instrumented.dfy";
-        File.WriteAllText(filename, programText);
+        SnapshotGenerator.SaveInstrumentedProgram(program);
     }
 }
 
@@ -91,14 +99,17 @@ public class InvariantInferrer : Rewriter
     }
 
     public override void PostResolve(Program program) {
-        // save instrumented program
-        var stringWriter = new StringWriter();
-        var printer = new Printer(stringWriter, program.Options, PrintModes.Serialization);
-        printer.PrintProgram(program, false);
-        var programText = stringWriter.ToString();
+        SnapshotGenerator.SaveInstrumentedProgram(program);
+    }
+}
 
-        var filename = Path.GetFileNameWithoutExtension(program.Name);
-        filename += "_instrumented.dfy";
-        File.WriteAllText(filename, programText);
+public class InvariantParser(ErrorReporter reporter) : Rewriter(reporter)
+{
+    public override void PreResolve(ModuleDefinition module) {
+        if (module.Name != "_module") 
+            return;
+
+        DaikonInvariantParser invariantParser = new();
+        invariantParser.Parse(module);
     }
 }
