@@ -171,23 +171,39 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
     }
 
     private void AddVariableDeclaration(Formal f, IOrigin token) {
+        var decType = f.Type.ToString().Replace(" ", "");
         var repType = DaikonFormatConverter.ToType(f.Type);
         var comparability = DaikonFormatConverter.GetComparability(f.Type);
         if (repType == "" || comparability == "") return;
-        
-        var declarationElement = AstUtils.CreateStringLiteral(token, 
-            $"variable {f.CompileName}{(DaikonFormatConverter.IsArrayType(f.Type) ? "[..]" : "")}\\n"
+
+        // arrays require two variable declarations: the array object itself and its contents
+        if (DaikonFormatConverter.IsArrayType(f.Type)) { // array object declaration
+            AddVariableDeclaration(token, f.CompileName, decType,
+                "hashcode", "9", false);
+        }
+        // array contents and other variable types declaration
+        AddVariableDeclaration(token, f.CompileName, 
+            decType, repType, comparability, 
+            DaikonFormatConverter.IsArrayType(f.Type)
         );
+    }
+
+    private void AddVariableDeclaration(IOrigin token, string varName, string decType, string repType, string comparability, bool isArray) {
+        var declarationElement = AstUtils.CreateStringLiteral(token, 
+            $"variable {varName}{(isArray ? "[..]" : "")}\\n");
         _newStmts.Add(new PrintStmt(token, [declarationElement]));
-        declarationElement = AstUtils.CreateStringLiteral(token, "\tvar-kind variable\\n");
+        declarationElement = AstUtils.CreateStringLiteral(token, 
+            $"\tvar-kind {(isArray ? "array" : "variable")}\\n");
         _newStmts.Add(new PrintStmt(token, [declarationElement]));
-        declarationElement = AstUtils.CreateStringLiteral(token, $"\tdec-type {f.Type.ToString().Replace(" ", "")}\\n");
+        if (isArray) {
+            declarationElement = AstUtils.CreateStringLiteral(token, $"\tenclosing-var {varName}\\n");
+            _newStmts.Add(new PrintStmt(token, [declarationElement]));
+        }
+        declarationElement = AstUtils.CreateStringLiteral(token, $"\tdec-type {decType}\\n");
         _newStmts.Add(new PrintStmt(token, [declarationElement]));
-        repType = "\trep-type " + $"{repType}\\n";
-        declarationElement = AstUtils.CreateStringLiteral(token, repType);
+        declarationElement = AstUtils.CreateStringLiteral(token, $"\trep-type {repType}\\n");
         _newStmts.Add(new PrintStmt(token, [declarationElement]));
-        comparability = "\tcomparability " + $"{comparability}\\n";
-        declarationElement = AstUtils.CreateStringLiteral(token, comparability);
+        declarationElement = AstUtils.CreateStringLiteral(token, $"\tcomparability {comparability}\\n");
         _newStmts.Add(new PrintStmt(token, [declarationElement]));
     }
 
@@ -235,17 +251,32 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
             return [];
         
         List<Statement> newStmts = [];
+        if (DaikonFormatConverter.IsArrayType(f.Type)) {
+            // random hashcode since, for now, we are not interested in invariants related to this
+            var hashcodeElem = AstUtils.CreateStringLiteral(method.Origin, "416153648\\n");
+            var hashCodePrinter = new PrintStmt(method.Origin, [hashcodeElem]);
+            newStmts.AddRange(AddVariableTracePoint(
+                method.Origin, f.CompileName, hashCodePrinter, false
+            ));
+        }
+        newStmts.AddRange(AddVariableTracePoint(method.Origin, f.CompileName, 
+            daikonValue, DaikonFormatConverter.IsArrayType(f.Type)));
+        return newStmts;
+    }
+
+    private List<Statement> AddVariableTracePoint(IOrigin token, string varName, Statement varValuePrinter, bool isArray) {
+        List<Statement> newStmts = [];
         // Print the name of the variable
-        var varIdentification = AstUtils.CreateStringLiteral(method.Origin, 
-            $"{f.CompileName}{(DaikonFormatConverter.IsArrayType(f.Type) ? "[..]" : "")}\\n"
+        var varIdentification = AstUtils.CreateStringLiteral(token, 
+            $"{varName}{(isArray ? "[..]" : "")}\\n"
         );
-        newStmts.Add(new PrintStmt(method.Origin, [varIdentification]));
+        newStmts.Add(new PrintStmt(token, [varIdentification]));
         // Print the value of the variable
-        newStmts.Add(daikonValue);
+        newStmts.Add(varValuePrinter);
         // Print the modified bit
-        var modBit = Expression.CreateIntLiteral(method.Origin, 0);
-        var delimElement = AstUtils.CreateStringLiteral(method.Origin, "\\n");
-        newStmts.Add(new PrintStmt(method.Origin, [modBit, delimElement]));
+        var modBit = Expression.CreateIntLiteral(token, 0);
+        var delimElement = AstUtils.CreateStringLiteral(token, "\\n");
+        newStmts.Add(new PrintStmt(token, [modBit, delimElement]));
         return newStmts;
     }
     
