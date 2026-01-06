@@ -14,6 +14,7 @@ public class SnapshotGenerator : PluginConfiguration
     private bool _invariantInference;
     private bool _invariantParsing;
     private bool _passingInvariantInference;
+    private bool _failingInvariantInference;
     
     public override void ParseArguments(string[] args) {
         if (args.Length < 3) return;
@@ -21,10 +22,16 @@ public class SnapshotGenerator : PluginConfiguration
         ViolationColumn = int.Parse(args[1]);
         if (args[2] == "enum") {
             _enumeration = true;
-        } else if (args[2] == "inv_pass" || args[2] == "inv_fail") { 
+        } else if (args[2] == "inv_pass" || args[2] == "inv_fail" || args[2] == "inv_all") { 
             _invariantInference = true;
             if (args[2] == "inv_pass")
                 _passingInvariantInference = true;
+            if (args[2] == "inv_fail")
+                _failingInvariantInference = true;
+            if (args[2] == "inv_all") {
+                _passingInvariantInference = true;
+                _failingInvariantInference = true;
+            }
         } else if (args[2] == "inv") {
             _invariantParsing = true;
         }
@@ -32,7 +39,7 @@ public class SnapshotGenerator : PluginConfiguration
     
    public override Rewriter[] GetRewriters(ErrorReporter reporter) { 
        return _enumeration ? [new Enumerator(reporter)] : 
-            (_invariantInference ? [new InvariantInferrer(reporter, _passingInvariantInference)] : 
+            (_invariantInference ? [new InvariantInferrer(reporter, _passingInvariantInference, _failingInvariantInference)] : 
             (_invariantParsing ? [new InvariantParser(reporter)] : []));
    }
 
@@ -80,9 +87,13 @@ public class InvariantInferrer : Rewriter
     public static Method? FaultyMethod { get; set; }
     public static Method? MainMethod { get; set; }
     public static bool PassingInvariantInference { get; private set; }
+    public static bool FailingInvariantInference { get; private set; }
     
-    public InvariantInferrer(ErrorReporter reporter, bool passingInvariantInference) : base(reporter) {
+    public InvariantInferrer(ErrorReporter reporter, bool passingInvariantInference, bool failingInvariantInference) 
+        : base(reporter) 
+    {
         PassingInvariantInference = passingInvariantInference;
+        FailingInvariantInference = failingInvariantInference;
     }
     
     public override void PostResolve(ModuleDefinition module) {

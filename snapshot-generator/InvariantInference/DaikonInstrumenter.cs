@@ -122,7 +122,7 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
         foreach (var (stmt, i) in method.Body.Body.Select((stmt, i) => (stmt, i))) {
             if (stmt is not AssignStatement { Rhss: [ExprRhs { Expr: ApplySuffix { Lhs: NameSegment nSegExpr} }] })
                 continue;
-            if ((InvariantInferrer.PassingInvariantInference && nSegExpr.Name == "Failing") ||
+            if ((!InvariantInferrer.FailingInvariantInference && nSegExpr.Name == "Failing") ||
                 (!InvariantInferrer.PassingInvariantInference && nSegExpr.Name == "Passing")) {
                 method.Body.Body.RemoveAt(i);
                 break;
