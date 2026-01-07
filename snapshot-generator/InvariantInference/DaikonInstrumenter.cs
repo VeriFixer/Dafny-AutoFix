@@ -178,11 +178,11 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
 
         // arrays require two variable declarations: the array object itself and its contents
         if (DaikonFormatConverter.IsArrayType(f.Type)) { // array object declaration
-            AddVariableDeclaration(token, f.CompileName, decType,
+            AddVariableDeclaration(token, f.DisplayName, decType,
                 "hashcode", "9", false);
         }
         // array contents and other variable types declaration
-        AddVariableDeclaration(token, f.CompileName, 
+        AddVariableDeclaration(token, f.DisplayName, 
             decType, repType, comparability, 
             DaikonFormatConverter.IsArrayType(f.Type)
         );
@@ -256,10 +256,10 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
             var hashcodeElem = AstUtils.CreateStringLiteral(method.Origin, "416153648\\n");
             var hashCodePrinter = new PrintStmt(method.Origin, [hashcodeElem]);
             newStmts.AddRange(AddVariableTracePoint(
-                method.Origin, f.CompileName, hashCodePrinter, false
+                method.Origin, f.DisplayName, hashCodePrinter, false
             ));
         }
-        newStmts.AddRange(AddVariableTracePoint(method.Origin, f.CompileName, 
+        newStmts.AddRange(AddVariableTracePoint(method.Origin, f.DisplayName, 
             daikonValue, DaikonFormatConverter.IsArrayType(f.Type)));
         return newStmts;
     }
