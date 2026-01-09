@@ -1,9 +1,12 @@
+using System.Text.RegularExpressions;
 using Microsoft.Dafny;
 
 namespace SnapshotGenerator.InvariantInference;
 
 public class DaikonInvariantParser() : Visitor(true)
 {
+    public static readonly List<(string, string)> TypeInfo = ImportTypeInfo(); // (var name, var type)
+    
     public void Parse(ModuleDefinition module) {
         Visit(module);
         if (InvariantInferrer.FaultyMethod == null)
@@ -32,6 +35,23 @@ public class DaikonInvariantParser() : Visitor(true)
             }
         }
     }
+
+    private static List<(string, string)> ImportTypeInfo() {
+        var typeInfo = new List<(string, string)>();
+        var currentVar = "";
+        // both traces will contain the same var declarations
+        var lines = File.ReadAllLines("trace-pass.dtrace");
+        foreach (var line in lines) {
+            if (line.StartsWith("variable")) {
+                currentVar = line.Split(" ")[1];
+            } else if (line.StartsWith("\tdec-type")) {
+                if (typeInfo.All(t => t.Item1 != currentVar))
+                    typeInfo.Add((currentVar, line[10..]));
+                currentVar = "";
+            }
+        }
+        return typeInfo;
+    }
     
     protected override void HandleMethod(Method method) {
         // find the faulty method, i.e., where the violation occurs  
@@ -42,12 +62,13 @@ public class DaikonInvariantParser() : Visitor(true)
     }
 
     /// -------------------------
-    /// Invariants
+    /// Invariant parsing
     /// -------------------------
     private Stack<SimplifyToken> _stack = new();
     private bool _invalidInvariant;
     
     private Expression? ParseInvariant(String invariant) {
+        invariant = HandleFormatExceptions(invariant);
         _invalidInvariant = false;
         // Lexing
         var words = invariant.Split(" ").ToList();
@@ -66,11 +87,11 @@ public class DaikonInvariantParser() : Visitor(true)
     private List<SimplifyToken> LexInvariantWord(String word) {
         if (word.StartsWith('('))
             return Enumerable.Concat(
-                [new SimplifyToken(SimplifyToken.SimplifyTokenType.OPEN_PAREN)],
+                [new SimplifyToken(SimplifyToken.SimplifyTokenType.OpenParen)],
                 LexInvariantWord(word[1..])
             ).ToList();
         if (word.EndsWith(')')) {
-            _stack.Push(new SimplifyToken(SimplifyToken.SimplifyTokenType.CLOSE_PAREN));
+            _stack.Push(new SimplifyToken(SimplifyToken.SimplifyTokenType.CloseParen));
             return LexInvariantWord(word.Remove(word.Length - 1));
         } 
         if (word.StartsWith('|')) {
@@ -91,6 +112,16 @@ public class DaikonInvariantParser() : Visitor(true)
         return token != null ? [token] : [];
     }
 
+    private string HandleFormatExceptions(String invariant) {
+        invariant = Regex.Replace(invariant, @"\s+", " ");
+        invariant = Regex.Replace(invariant, @"\d+(?:\.\d+)?d0", 
+            match => match.Value.Substring(0, match.Value.Length - 2));
+        return invariant.Replace("select elems", "selectElems");
+    }
+
+    /// -------------------------
+    /// Instrumentation
+    /// -------------------------
     private void InstrumentWithInvariant(int location, Expression invariantExpr) {
         // TODO: Implement
     }
