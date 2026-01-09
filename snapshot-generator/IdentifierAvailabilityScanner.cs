@@ -5,7 +5,8 @@ namespace SnapshotGenerator;
 
 public class IdentifierAvailabilityScanner(bool multipleModule = false) : Visitor(multipleModule)
 {
-    public List<(IVariable?, MemberDecl?, string, Type, int?, int?)> IdentifierAvailability { get; private set; } = []; // (name, position where availability starts, position where availability ends)
+    // (enclosing var, enclosing member celaration, name, type, position where availability starts, position where availability ends)
+    public List<(IVariable?, MemberDecl?, string, Type, int?, int?)> IdentifierAvailability { get; private set; } = [];
     public List<string> Ghosts { get; } = [];
 
     private List<Formal> _currentMethodOutputs = [];
