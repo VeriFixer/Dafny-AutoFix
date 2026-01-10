@@ -100,8 +100,9 @@ public class DaikonInvariantParser() : Visitor(true)
                 var constantToken = SimplifyToken.GetSimplifyToken(word[1..]);
                 if (constantToken == null) _invalidInvariant = true;
                 return constantToken != null ? [constantToken] : [];
-            }
-            if (word.StartsWith("__orig__")) {
+            } if (word.StartsWith("_string_")) {
+                return [new StringSimplifyToken(word[8..])];
+            } if (word.StartsWith("__orig__")) {
                 _invalidInvariant = true;
                 return [];
             };
@@ -113,9 +114,13 @@ public class DaikonInvariantParser() : Visitor(true)
     }
 
     private string HandleFormatExceptions(String invariant) {
-        invariant = Regex.Replace(invariant, @"\s+", " ");
-        invariant = Regex.Replace(invariant, @"\d+(?:\.\d+)?d0", 
+        invariant = Regex.Replace(invariant, @"\s+", " "); // remove multiple blank spaces
+        invariant = Regex.Replace(invariant, @"\d+(?:\.\d+)?d0", // remove the d0 in a double representation 
             match => match.Value.Substring(0, match.Value.Length - 2));
+        // since we parse the invariant's words using a blank space as delimiter
+        // we need to temporarily hide the blank spaces in a string
+        invariant = Regex.Replace(invariant, @"\|_string_(.*?)\|",
+            match => match.Value.Replace(" ", "_string_space_"));
         return invariant.Replace("select elems", "selectElems");
     }
 
