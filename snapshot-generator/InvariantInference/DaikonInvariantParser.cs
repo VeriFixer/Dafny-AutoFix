@@ -3,9 +3,11 @@ using Microsoft.Dafny;
 
 namespace SnapshotGenerator.InvariantInference;
 
-public class DaikonInvariantParser() : Visitor(true)
+public class DaikonInvariantParser : Visitor
 {
     public static readonly List<(string, string)> TypeInfo = ImportTypeInfo(); // (var name, var type)
+    private TopLevelDeclWithMembers? _classUnderVisit;
+    private string _enclosingClassName = "";
     
     public void Parse(ModuleDefinition module) {
         Visit(module);
@@ -18,7 +20,7 @@ public class DaikonInvariantParser() : Visitor(true)
         var lines = File.ReadAllLines("inv.inv");
         foreach (var line in lines) {
             if (line.EndsWith(":::ENTER") || line.EndsWith(":::EXIT")) {
-                if (line.Contains(faultyMethod.FullSanitizedName)) {
+                if (line.Contains(faultyMethod.Name) && line.Contains(_enclosingClassName)) {
                     location = line.EndsWith(":::ENTER") ? 
                         faultyMethod.Body.StartToken.pos : 
                         faultyMethod.Body.EndToken.pos;
@@ -52,6 +54,11 @@ public class DaikonInvariantParser() : Visitor(true)
         }
         return typeInfo;
     }
+
+    protected override void HandleMemberDecls(TopLevelDeclWithMembers decl) {
+        _classUnderVisit = decl;
+        base.HandleMemberDecls(decl);
+    }
     
     protected override void HandleMethod(Method method) {
         // find the faulty method, i.e., where the violation occurs  
@@ -59,6 +66,8 @@ public class DaikonInvariantParser() : Visitor(true)
               method.EndToken.line >= SnapshotGenerator.ViolationLine))
             return;
         InvariantInferrer.FaultyMethod = method;
+        if (_classUnderVisit == null) return;
+        _enclosingClassName = _classUnderVisit.Name;
     }
 
     /// -------------------------
@@ -81,7 +90,7 @@ public class DaikonInvariantParser() : Visitor(true)
         }
         // Parsing
         var (e, _) = SimplifyExpression.Parse(tokens);
-        return e.ToExpression();
+        return e.ToExpression()[0];
     }
 
     private List<SimplifyToken> LexInvariantWord(String word) {
@@ -128,6 +137,34 @@ public class DaikonInvariantParser() : Visitor(true)
     /// Instrumentation
     /// -------------------------
     private void InstrumentWithInvariant(int location, Expression invariantExpr) {
-        // TODO: Implement
+        var faultyMethod = InvariantInferrer.FaultyMethod;
+        if (faultyMethod == null || faultyMethod.Body == null) return;
+
+        if (location == faultyMethod.Body.StartToken.pos) {
+            var token = faultyMethod.Body.StartToken;
+            faultyMethod.Body.Body.Insert(0, PrintInvariant(token, invariantExpr));
+        } else if (location == faultyMethod.Body.EndToken.pos) {
+            var token = faultyMethod.Body.EndToken;
+            faultyMethod.Body.Body.Add(PrintInvariant(token, invariantExpr));
+        } else {
+            foreach (var (stmt, i) in faultyMethod.Body.Body.Select((stmt, i) => (stmt, i))) {
+                if (location == stmt.EndToken.pos) {
+                    var token = stmt.EndToken;
+                    faultyMethod.Body.Body.Insert(i + 1, PrintInvariant(token, invariantExpr));
+                    break;
+                }
+            }
+        }
+    }
+
+    private PrintStmt PrintInvariant(IOrigin token, Expression invariantExpr) {
+        var posElement = Expression.CreateIntLiteral(token, token.pos);
+        var exprStrElement = AstUtils.CreateStringLiteral(token, invariantExpr.ToString());
+        var delimElement1 = AstUtils.CreateStringLiteral(token, ",");
+        var delimElement2 = AstUtils.CreateStringLiteral(token, "\\n");
+        List<Expression> printElements = [
+            posElement, delimElement1, exprStrElement, delimElement1, invariantExpr, delimElement2
+        ];
+        return new PrintStmt(token, printElements); 
     }
 }

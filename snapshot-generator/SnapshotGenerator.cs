@@ -117,10 +117,16 @@ public class InvariantInferrer : Rewriter
 public class InvariantParser(ErrorReporter reporter) : Rewriter(reporter)
 {
     public override void PreResolve(ModuleDefinition module) {
-        if (module.Name != "_module") 
+        if (!(module.Name == "_module" ||
+             (module.StartToken.pos <= SnapshotGenerator.ViolationLine &&
+              module.EndToken.pos >= SnapshotGenerator.ViolationLine))) 
             return;
 
         DaikonInvariantParser invariantParser = new();
         invariantParser.Parse(module);
+    }
+    
+    public override void PostResolve(Program program) {
+        SnapshotGenerator.SaveInstrumentedProgram(program);
     }
 }
