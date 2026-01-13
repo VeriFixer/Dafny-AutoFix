@@ -124,6 +124,7 @@ public class InvariantParser(ErrorReporter reporter) : Rewriter(reporter)
 
         DaikonInvariantParser invariantParser = new();
         invariantParser.Parse(module);
+        InvariantInferrer.FaultyMethod = null;
     }
     
     public override void PostResolve(Program program) {
