@@ -13,7 +13,8 @@ public class SimplifyExpression
 {
     private readonly List<SimplifyExpression> _args;
     private readonly SimplifyToken _t;
-    
+
+    private static readonly List<(Expression, Type?)> AllGeneratedExprsTypes = [];
     private static bool _replaceArraySelectionWithMembership;
     private static Type? _sibblingNodeType;
     private static (Expression?, Type?) _forallBoundVar;
@@ -70,13 +71,12 @@ public class SimplifyExpression
             _forallBoundVar = (_args[0].ToExpression()[0], null); // TODO: improve
 
         var strArgIdx = _args.FindIndex(arg => arg._t.Type == SimplifyToken.SimplifyTokenType.StrConst);
-        var nullArgIdx = _args.FindIndex(arg => arg._t.Type == SimplifyToken.SimplifyTokenType.Null);
-        if (strArgIdx != -1 || nullArgIdx != -1) {
-            var targetIdx = strArgIdx != -1 ? strArgIdx : nullArgIdx;
-            _sibblingNodeType = _args.Where((_, i) => i != targetIdx)
+        if (strArgIdx != -1) {
+            _sibblingNodeType = _args.Where((_, i) => i != strArgIdx)
                 .Select(arg => arg.ToExpression())
-                .SelectMany(exprList => exprList).ToList()
-                .FirstOrDefault(arg => arg?.Type != null)?.Type;
+                .SelectMany(exprList => exprList)
+                .Select(GetExpressionType)
+                .FirstOrDefault(type => type != null);
         }
         var argExprs = _args.Select(arg => arg.ToExpression()).SelectMany(exprList => exprList).ToList();
         if (argExprs.Contains(null))
@@ -98,28 +98,27 @@ public class SimplifyExpression
             SimplifyToken.SimplifyTokenType.Or => [ToBinaryExpression(BinaryExpr.Opcode.Or, argExprs)],
             SimplifyToken.SimplifyTokenType.Iff => [ToBinaryExpression(BinaryExpr.Opcode.Iff, argExprs)],
             SimplifyToken.SimplifyTokenType.Implies => [ToBinaryExpression(BinaryExpr.Opcode.Imp, argExprs)],
-            SimplifyToken.SimplifyTokenType.Not => [new UnaryOpExpr(null, UnaryOpExpr.Opcode.Not, argExprs[0]) { Type = Type.Bool }],
+            SimplifyToken.SimplifyTokenType.Not => [ToNotUnaryExpression(argExprs[0])],
             SimplifyToken.SimplifyTokenType.ArrayLen => [ToArrayLengthExpression(argExprs[0])],
             SimplifyToken.SimplifyTokenType.ArraySel => [ToArraySelectExpression(argExprs[0], argExprs[1])],
             SimplifyToken.SimplifyTokenType.ArrayElems => [argExprs[0]],
             SimplifyToken.SimplifyTokenType.NullCmp => [ToNullComparisonSubexpression(argExprs[0])],
             SimplifyToken.SimplifyTokenType.Forall => [ToForallExpression(argExprs)],
             SimplifyToken.SimplifyTokenType.Var => ToIdentifierExpression(argExprs),
-            SimplifyToken.SimplifyTokenType.IntConst => [new LiteralExpr(null, ((IntSimplifyToken)_t).Value) { Type = Type.Int }],
-            SimplifyToken.SimplifyTokenType.RealConst => [new LiteralExpr(null, BigDec.FromString(((DoubleSimplifyToken)_t).Value)) { Type = Type.Real }],
+            SimplifyToken.SimplifyTokenType.IntConst => [ToIntLiteralExpression()],
+            SimplifyToken.SimplifyTokenType.RealConst => [ToRealLiteralExpression()],
             SimplifyToken.SimplifyTokenType.StrConst => [ToStringExpression()],
-            SimplifyToken.SimplifyTokenType.True => [new LiteralExpr(null, true) { Type = Type.Bool }],
-            SimplifyToken.SimplifyTokenType.False => [new LiteralExpr(null, false) { Type = Type.Bool }],
+            SimplifyToken.SimplifyTokenType.True => [ToBoolLiteralExpression(true)],
+            SimplifyToken.SimplifyTokenType.False => [ToBoolLiteralExpression(false)],
             SimplifyToken.SimplifyTokenType.Null => [ToNullLiteralExpression()],
             _ => [null]
         };
     }
     
     private List<Expression?> ToIdentifierExpression(List<Expression?> argExprs) {
-        var idExpr = new IdentifierExpr(null, ((VarSimplifyToken)_t).Name);
+        var idExpr = new NameSegment(null, ((VarSimplifyToken)_t).Name, null);
         var type = GetTypeFromVarName(((VarSimplifyToken)_t).Name);
-        if (type != null)
-            idExpr.Type = type;
+        AllGeneratedExprsTypes.Add((idExpr, type));
         
         List<Expression?> idExprs = [idExpr];
         idExprs.AddRange(argExprs);
@@ -128,30 +127,27 @@ public class SimplifyExpression
 
     private Expression ToBinaryExpression(BinaryExpr.Opcode op, List<Expression?> argExprs) {
         Type? type = null;
+        Type? argType = null;
         if (op == BinaryExpr.Opcode.Add || op == BinaryExpr.Opcode.Sub || 
             op == BinaryExpr.Opcode.Mul || op == BinaryExpr.Opcode.Div || op == BinaryExpr.Opcode.Mod) {
-            type = argExprs[0]?.Type ?? argExprs[1]?.Type ?? Type.Int;
-            if (type != null) argExprs
-                .Where(arg => arg is { Type: null }).ToList()
-                .ForEach(arg => arg.Type = type);
+            type = GetExpressionType(argExprs[0]) ?? GetExpressionType(argExprs[1]) ?? Type.Int;
+            argType = type;
         } else if (op == BinaryExpr.Opcode.And || op == BinaryExpr.Opcode.Or ||
                    op == BinaryExpr.Opcode.Iff || op == BinaryExpr.Opcode.Imp) {
             type = Type.Bool;
-            var argType = argExprs[0]?.Type ?? argExprs[1]?.Type;
-            if (argType != null) argExprs
-                .Where(arg => arg is { Type: null }).ToList()
-                .ForEach(arg => arg.Type = argType);
+            argType = Type.Bool;
         } else if (op == BinaryExpr.Opcode.Eq || op == BinaryExpr.Opcode.Neq ||
                    op == BinaryExpr.Opcode.Le || op == BinaryExpr.Opcode.Lt ||
                    op == BinaryExpr.Opcode.Ge || op == BinaryExpr.Opcode.Gt) {
-            type = argExprs[0]?.Type ?? argExprs[1]?.Type;
-            if (type != null) argExprs
-                .Where(arg => arg is { Type: null }).ToList()
-                .ForEach(arg => arg.Type = type);
+            type = Type.Bool;
+            argType = GetExpressionType(argExprs[0]) ?? GetExpressionType(argExprs[1]);
         }
+        argExprs.Where(arg => arg != null && 
+                !AllGeneratedExprsTypes.Select(exprType => exprType.Item1).Contains(arg))
+            .ToList().ForEach(arg => AllGeneratedExprsTypes.Add((arg, argType)));
         if (_forallBoundVar.Item1 != null && _forallBoundVar.Item2 == null && 
             argExprs.Any(arg => arg?.ToString() == _forallBoundVar.Item1.ToString())) {
-            _forallBoundVar.Item2 = type;
+            _forallBoundVar.Item2 = argType;
         }
         
         if (op == BinaryExpr.Opcode.Eq && _replaceArraySelectionWithMembership)
@@ -160,13 +156,23 @@ public class SimplifyExpression
             op == BinaryExpr.Opcode.Mul || op == BinaryExpr.Opcode.Div ||
             op == BinaryExpr.Opcode.And || op == BinaryExpr.Opcode.Or)
             return ToRecBinaryExpression(op, argExprs, type);
-        return new BinaryExpr(null, op, argExprs[0], argExprs[1]) {Type = type};
+        var binExpr = new BinaryExpr(null, op, argExprs[0], argExprs[1]);
+        AllGeneratedExprsTypes.Add((binExpr, type));
+        return binExpr;
     }
 
     private Expression ToRecBinaryExpression(BinaryExpr.Opcode op, List<Expression?> argExprs, Type? type) {
-        if (argExprs.Count > 2)
-            return new BinaryExpr(null, op, argExprs[0], ToRecBinaryExpression(op, argExprs[1..], type)) {Type = type};
-        return new BinaryExpr(null, op, argExprs[0], argExprs[1]) { Type = type };
+        var binExpr = argExprs.Count > 2 ? 
+            new BinaryExpr(null, op, argExprs[0], ToRecBinaryExpression(op, argExprs[1..], type)) : 
+            new BinaryExpr(null, op, argExprs[0], argExprs[1]);
+        AllGeneratedExprsTypes.Add((binExpr, type));
+        return binExpr;
+    }
+    
+    private Expression ToNotUnaryExpression(Expression? arg) {
+        var unaryExpr = new UnaryOpExpr(null, UnaryOpExpr.Opcode.Not, arg);
+        AllGeneratedExprsTypes.Add((unaryExpr, Type.Bool));
+        return unaryExpr;
     }
 
     private Expression? ToStringExpression() {
@@ -177,45 +183,75 @@ public class SimplifyExpression
             UserDefinedType uType when uType.Name.StartsWith("array") => null, // TODO
             _ => new StringLiteralExpr(null, strValue, false) {Type = Type.String()}
         };
+        var type = _sibblingNodeType switch {
+            CharType => Type.Char,
+            SeqType or SetType or MultiSetType or MapType => null, // TODO
+            UserDefinedType uType when uType.Name.StartsWith("array") => null, // TODO
+            _ => Type.String()
+        };
+        if (expr != null)
+            AllGeneratedExprsTypes.Add((expr, type));
         _sibblingNodeType = null;
         return expr;
     }
 
+    private Expression ToIntLiteralExpression() {
+        var intExpr = new LiteralExpr(null, ((IntSimplifyToken)_t).Value);
+        AllGeneratedExprsTypes.Add((intExpr, Type.Int));
+        return intExpr;
+    }
+    
+    private Expression ToRealLiteralExpression() {
+        var decValue = BigDec.FromString(((DoubleSimplifyToken)_t).Value);
+        var realExpr = new LiteralExpr(null, decValue);
+        AllGeneratedExprsTypes.Add((realExpr, Type.Real));
+        return realExpr;
+    }
+    
+    private Expression ToBoolLiteralExpression(bool value) {
+        var boolExpr = new LiteralExpr(null, value);
+        AllGeneratedExprsTypes.Add((boolExpr, Type.Bool));
+        return boolExpr;
+    }
+
     private Expression ToNullLiteralExpression() {
         var nullExpr = new LiteralExpr(new AutoGeneratedOrigin(null), null);
-        if (_sibblingNodeType != null)
-            nullExpr.Type = _sibblingNodeType;
         return nullExpr;
     }
 
     private Expression ToArrayMembershipExpression(Expression? array, Expression? elem) {
         _replaceArraySelectionWithMembership = false;
-        return new BinaryExpr(null, BinaryExpr.Opcode.In, elem, array) {Type = Type.Bool};
+        var inExpr = new BinaryExpr(null, BinaryExpr.Opcode.In, elem, array);
+        AllGeneratedExprsTypes.Add((inExpr, Type.Bool));
+        return inExpr;
     }
 
     private Expression? ToArrayLengthExpression(Expression? array) {
         if (array == null) return null;
         var type = "";
-        if (array is IdentifierExpr idExpr) {
+        if (array is NameSegment idExpr) {
             type = DaikonInvariantParser.TypeInfo.First(
                 var => var.Item1 == idExpr.Name
             ).Item2;
         }
+        else return null;
 
-        return type switch {
+        Expression? lengthExpr = type switch {
             _ when type.StartsWith("array<") => new ExprDotName(
-                null, array, new Name(null, "Length"), null
-            ) {Type = Type.Int},
+                null, array, new Name(null, "Length"), null),
             // default case: seq, set, multiset and map all use the same cardinality operator
-            _ => new UnaryOpExpr(null, UnaryOpExpr.Opcode.Cardinality, array) {Type = Type.Int},
+            _ => new UnaryOpExpr(null, UnaryOpExpr.Opcode.Cardinality, array)
         };
+        AllGeneratedExprsTypes.Add((lengthExpr, Type.Int));
+        return lengthExpr;
     }
 
     private Expression? ToArraySelectExpression(Expression? array, Expression? index) {
         if (array == null || index == null) return null;
-        index.Type ??= Type.Int;
+        if (!AllGeneratedExprsTypes.Select(e => e.Item1).Contains(index))
+            AllGeneratedExprsTypes.Add((index, Type.Int));
         var type = "";
-        if (array is IdentifierExpr idExpr) {
+        if (array is NameSegment idExpr) {
             type = DaikonInvariantParser.TypeInfo.First(
                 var => var.Item1 == idExpr.Name
             ).Item2;
@@ -230,11 +266,13 @@ public class SimplifyExpression
             _replaceArraySelectionWithMembership = true;
             return array;
         }
-        return new SeqSelectExpr(null, true, array, index, null) {Type = argType};
+        var selectExpr = new SeqSelectExpr(null, true, array, index, null);
+        AllGeneratedExprsTypes.Add((selectExpr, argType));
+        return selectExpr;
     }
     
     private Expression? ToNullComparisonSubexpression(Expression? obj) {
-        if (obj == null || obj is not IdentifierExpr idExpr) return null;
+        if (obj == null || obj is not NameSegment idExpr) return null;
         var type = DaikonInvariantParser.TypeInfo.First(
             var => var.Item1 == idExpr.Name
         ).Item2;
@@ -249,13 +287,24 @@ public class SimplifyExpression
         
         List<BoundVar> boundVars = [];
         foreach (var boundVar in args[..^1]) {
-            if (boundVar != null && boundVar is IdentifierExpr idExpr) {
+            if (boundVar != null && boundVar is NameSegment idExpr) {
                 boundVars.Add(new BoundVar(null, new Name(null, idExpr.Name), type));
                 DaikonInvariantParser.TypeInfo.Add((idExpr.Name, type.ToString().Replace(" ", "")));
             }
         }
         if (boundVars.Count == 0 || expr == null) return null;
-        return new ForallExpr(null, boundVars, null, expr);
+        var forallExpr = new ForallExpr(null, boundVars, null, expr);
+        AllGeneratedExprsTypes.Add((forallExpr, type));
+        return forallExpr;
+    }
+
+    private Type? GetExpressionType(Expression? expr) {
+        if (expr == null) return null;
+        return AllGeneratedExprsTypes.FirstOrDefault(
+            exprType => 
+                exprType.Item1 == expr &&
+                exprType.Item2 != null
+        ).Item2;
     }
 
     private Type? GetTypeFromVarName(string varName) {
