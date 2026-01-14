@@ -6,8 +6,11 @@ namespace SnapshotGenerator.InvariantInference;
 public class DaikonInvariantParser : Visitor
 {
     public static readonly List<(string, string)> TypeInfo = ImportTypeInfo(); // (var name, var type)
+    private readonly List<(Expression, int, Statement)> _invariantsPlacement = [];
     private TopLevelDeclWithMembers? _classUnderVisit;
     private string _enclosingClassName = "";
+    private Predicate<Statement>? _findStmtPred;
+    private (BlockStmt?, int) _targetStmt = (null, -1);
     
     public void Parse(ModuleDefinition module) {
         Visit(module);
@@ -33,9 +36,10 @@ public class DaikonInvariantParser : Visitor
                 var invExpr = ParseInvariant(line);
                 if (invExpr == null)
                     continue;
-                InstrumentWithInvariant(location, invExpr);
+                FindInvariantPlacement(location, invExpr);
             }
         }
+        InstrumentWithInvariants();
     }
 
     private static List<(string, string)> ImportTypeInfo() {
@@ -68,6 +72,7 @@ public class DaikonInvariantParser : Visitor
         InvariantInferrer.FaultyMethod = method;
         if (_classUnderVisit == null) return;
         _enclosingClassName = _classUnderVisit.Name;
+        base.HandleMethod(method);
     }
 
     /// -------------------------
@@ -136,35 +141,66 @@ public class DaikonInvariantParser : Visitor
     /// -------------------------
     /// Instrumentation
     /// -------------------------
-    private void InstrumentWithInvariant(int location, Expression invariantExpr) {
+    private void FindInvariantPlacement(int location, Expression invariantExpr) {
+        var faultyMethod = InvariantInferrer.FaultyMethod;
+        if (faultyMethod == null || faultyMethod.Body == null) return;
+        
+        if (location == faultyMethod.Body.StartToken.pos) {
+            _invariantsPlacement.Add((invariantExpr, location, faultyMethod.Body));
+        } else if (location == faultyMethod.Body.EndToken.pos) {
+            _invariantsPlacement.Add((invariantExpr, location, faultyMethod.Body));
+        } else {
+            _findStmtPred = stmt => stmt.EndToken.pos == location;
+            HandleMethod(faultyMethod);
+            var prevStmt = (_targetStmt.Item1 != null && _targetStmt.Item2 != -1) ? 
+                _targetStmt.Item1.Body[_targetStmt.Item2] : null;
+            if (prevStmt != null) 
+                _invariantsPlacement.Add((invariantExpr, location, prevStmt));
+            _findStmtPred = null;
+            _targetStmt = (null, -1);
+        }
+    }
+    
+    private void InstrumentWithInvariants() {
         var faultyMethod = InvariantInferrer.FaultyMethod;
         if (faultyMethod == null || faultyMethod.Body == null) return;
 
-        if (location == faultyMethod.Body.StartToken.pos) {
-            var token = faultyMethod.Body.StartToken;
-            faultyMethod.Body.Body.Insert(0, PrintInvariant(token, invariantExpr));
-        } else if (location == faultyMethod.Body.EndToken.pos) {
-            var token = faultyMethod.Body.EndToken;
-            faultyMethod.Body.Body.Add(PrintInvariant(token, invariantExpr));
-        } else {
-            foreach (var (stmt, i) in faultyMethod.Body.Body.Select((stmt, i) => (stmt, i))) {
-                if (location == stmt.EndToken.pos) {
-                    var token = stmt.EndToken;
-                    faultyMethod.Body.Body.Insert(i + 1, PrintInvariant(token, invariantExpr));
-                    break;
+        foreach (var (inv, location, placement) in _invariantsPlacement) {
+            if (ReferenceEquals(placement, faultyMethod.Body)) {
+                if (location == faultyMethod.Body.StartToken.pos) {
+                    faultyMethod.Body.Body.Insert(0, PrintInvariant(inv, location));
+                } else {
+                    faultyMethod.Body.Body.Add(PrintInvariant(inv, location));
                 }
+            } else {
+                _findStmtPred = stmt => ReferenceEquals(stmt, placement);
+                HandleMethod(faultyMethod);
+                if (_targetStmt.Item1 != null && _targetStmt.Item2 != -1)
+                    _targetStmt.Item1.Body.Insert(_targetStmt.Item2 + 1, PrintInvariant(inv, location));
+                _findStmtPred = null;
+                _targetStmt = (null, -1);
             }
         }
     }
 
-    private PrintStmt PrintInvariant(IOrigin token, Expression invariantExpr) {
-        var posElement = Expression.CreateIntLiteral(token, token.pos);
-        var exprStrElement = AstUtils.CreateStringLiteral(token, invariantExpr.ToString());
-        var delimElement1 = AstUtils.CreateStringLiteral(token, ",");
-        var delimElement2 = AstUtils.CreateStringLiteral(token, "\\n");
+    private PrintStmt PrintInvariant(Expression invariantExpr, int location) {
+        var posElement = Expression.CreateIntLiteral(null, location);
+        var exprStrElement = AstUtils.CreateStringLiteral(null, invariantExpr.ToString());
+        var delimElement1 = AstUtils.CreateStringLiteral(null, ",");
+        var delimElement2 = AstUtils.CreateStringLiteral(null, "\\n");
         List<Expression> printElements = [
             posElement, delimElement1, exprStrElement, delimElement1, invariantExpr, delimElement2
         ];
-        return new PrintStmt(token, printElements); 
+        return new PrintStmt(null, printElements); 
+    }
+
+    protected override void HandleBlock(BlockStmt blockStmt) {
+        foreach (var (stmt, i) in blockStmt.Body.Select((stmt, i) => (stmt, i))) {
+            if (_findStmtPred != null && _findStmtPred(stmt)) {
+                _targetStmt = (blockStmt, i);
+                return;
+            }
+            HandleStatement(stmt);
+        }
     }
 }
