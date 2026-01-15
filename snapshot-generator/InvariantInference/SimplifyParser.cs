@@ -15,6 +15,8 @@ public class SimplifyExpression
     private readonly SimplifyToken _t;
 
     private static readonly List<(Expression, Type?)> AllGeneratedExprsTypes = [];
+    private static List<Expression> _exprsNeedingNonZeroCheck = [];
+    private static bool _isTopLevelExpr = true;
     private static bool _replaceArraySelectionWithMembership;
     private static Type? _sibblingNodeType;
     private static (Expression?, Type?) _forallBoundVar;
@@ -67,6 +69,8 @@ public class SimplifyExpression
     }
     
     public List<Expression?> ToExpression() {
+        var prevIsTopLevelExpr = _isTopLevelExpr;
+        _isTopLevelExpr = false;
         if (_t.Type == SimplifyToken.SimplifyTokenType.Forall)
             _forallBoundVar = (_args[0].ToExpression()[0], null); // TODO: improve
 
@@ -79,10 +83,11 @@ public class SimplifyExpression
                 .FirstOrDefault(type => type != null);
         }
         var argExprs = _args.Select(arg => arg.ToExpression()).SelectMany(exprList => exprList).ToList();
+        _isTopLevelExpr = prevIsTopLevelExpr;
         if (argExprs.Contains(null))
             return [null];
         
-        return _t.Type switch {
+        var expr = _t.Type switch {
             SimplifyToken.SimplifyTokenType.Add => [ToBinaryExpression(BinaryExpr.Opcode.Add, argExprs)],
             SimplifyToken.SimplifyTokenType.Sub => [ToBinaryExpression(BinaryExpr.Opcode.Sub, argExprs)],
             SimplifyToken.SimplifyTokenType.Mul => [ToBinaryExpression(BinaryExpr.Opcode.Mul, argExprs)],
@@ -113,6 +118,12 @@ public class SimplifyExpression
             SimplifyToken.SimplifyTokenType.Null => [ToNullLiteralExpression()],
             _ => [null]
         };
+        
+        if (_isTopLevelExpr && _exprsNeedingNonZeroCheck.Count > 0 && expr[0] != null) {
+            expr = [AddNonZeroCheck(expr[0], _exprsNeedingNonZeroCheck)];
+            _exprsNeedingNonZeroCheck = [];
+        }
+        return expr;
     }
     
     private List<Expression?> ToIdentifierExpression(List<Expression?> argExprs) {
@@ -149,6 +160,8 @@ public class SimplifyExpression
             argExprs.Any(arg => arg?.ToString() == _forallBoundVar.Item1.ToString())) {
             _forallBoundVar.Item2 = argType;
         }
+        if (op == BinaryExpr.Opcode.Mod && argExprs[1] != null)
+            _exprsNeedingNonZeroCheck.Add(argExprs[1]);
         
         if (op == BinaryExpr.Opcode.Eq && _replaceArraySelectionWithMembership)
             return ToArrayMembershipExpression(argExprs[0], argExprs[1]);
@@ -162,11 +175,22 @@ public class SimplifyExpression
     }
 
     private Expression ToRecBinaryExpression(BinaryExpr.Opcode op, List<Expression?> argExprs, Type? type) {
+        if (op == BinaryExpr.Opcode.Div && argExprs[1] != null)
+            _exprsNeedingNonZeroCheck.Add(argExprs[1]);
         var binExpr = argExprs.Count > 2 ? 
             new BinaryExpr(null, op, argExprs[0], ToRecBinaryExpression(op, argExprs[1..], type)) : 
             new BinaryExpr(null, op, argExprs[0], argExprs[1]);
         AllGeneratedExprsTypes.Add((binExpr, type));
         return binExpr;
+    }
+
+    private Expression AddNonZeroCheck(Expression expr, List<Expression> divExprs) {
+        if (divExprs.Count == 0) return expr;
+        var zeroExpr = new LiteralExpr(null, 0);
+        var nonZeroExpr = new BinaryExpr(null, BinaryExpr.Opcode.Neq, divExprs[0], zeroExpr);
+        return divExprs.Count > 1 ? 
+            new BinaryExpr(null, BinaryExpr.Opcode.And, nonZeroExpr, AddNonZeroCheck(expr, divExprs[1..])) :
+            new BinaryExpr(null, BinaryExpr.Opcode.And, nonZeroExpr, expr);
     }
     
     private Expression ToNotUnaryExpression(Expression? arg) {
