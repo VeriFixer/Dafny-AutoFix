@@ -19,7 +19,7 @@ public class SimplifyExpression
     private static bool _isTopLevelExpr = true;
     private static bool _replaceArraySelectionWithMembership;
     private static Type? _sibblingNodeType;
-    private static (Expression?, Type?) _forallBoundVar;
+    private static List<(Expression?, Type?)> _forallBoundVars = [];
 
     private SimplifyExpression(SimplifyToken t, List<SimplifyExpression> args) {
         _t = t;
@@ -71,8 +71,11 @@ public class SimplifyExpression
     public List<Expression?> ToExpression() {
         var prevIsTopLevelExpr = _isTopLevelExpr;
         _isTopLevelExpr = false;
-        if (_t.Type == SimplifyToken.SimplifyTokenType.Forall)
-            _forallBoundVar = (_args[0].ToExpression()[0], null); // TODO: improve
+        if (_t.Type == SimplifyToken.SimplifyTokenType.Forall) {
+            _args.Select(arg => arg.ToExpression())
+                .SelectMany(exprList => exprList).ToList()
+                .ForEach(arg => _forallBoundVars.Add((arg, null)));
+        }
 
         var strArgIdx = _args.FindIndex(arg => arg._t.Type == SimplifyToken.SimplifyTokenType.StrConst);
         if (strArgIdx != -1) {
@@ -156,10 +159,10 @@ public class SimplifyExpression
         argExprs.Where(arg => arg != null && 
                 !AllGeneratedExprsTypes.Select(exprType => exprType.Item1).Contains(arg))
             .ToList().ForEach(arg => AllGeneratedExprsTypes.Add((arg, argType)));
-        if (_forallBoundVar.Item1 != null && _forallBoundVar.Item2 == null && 
-            argExprs.Any(arg => arg?.ToString() == _forallBoundVar.Item1.ToString())) {
-            _forallBoundVar.Item2 = argType;
-        }
+        _forallBoundVars = _forallBoundVars.Select(var =>
+                var.Item1 != null && var.Item2 == null && 
+                argExprs.Any(arg => arg?.ToString() == var.Item1.ToString()) ?
+                    (var.Item1, argType) : var).ToList();
         if (op == BinaryExpr.Opcode.Mod && argExprs[1] != null)
             _exprsNeedingNonZeroCheck.Add(argExprs[1]);
         
@@ -304,21 +307,23 @@ public class SimplifyExpression
     }
 
     private Expression? ToForallExpression(List<Expression?> args) {
-        if (_forallBoundVar.Item2 == null) return null;
-        var cloner = new Cloner();
-        var type = cloner.CloneType(_forallBoundVar.Item2);
         var expr = args[^1];
         
         List<BoundVar> boundVars = [];
         foreach (var boundVar in args[..^1]) {
-            if (boundVar != null && boundVar is NameSegment idExpr) {
-                boundVars.Add(new BoundVar(null, new Name(null, idExpr.Name), type));
-                DaikonInvariantParser.TypeInfo.Add((idExpr.Name, type.ToString().Replace(" ", "")));
-            }
+            if (boundVar == null || boundVar is not NameSegment idExpr) continue;
+            var boundVarInfo = _forallBoundVars.FirstOrDefault(
+                var => var.Item1?.ToString() == idExpr.Name && var.Item2 != null);
+            if (boundVarInfo.Item1 == null) return null;
+            var cloner = new Cloner();
+            var type = cloner.CloneType(boundVarInfo.Item2);
+            boundVars.Add(new BoundVar(null, new Name(null, idExpr.Name), type));
+            DaikonInvariantParser.TypeInfo.Add((idExpr.Name, type.ToString().Replace(" ", "")));
         }
         if (boundVars.Count == 0 || expr == null) return null;
+        
         var forallExpr = new ForallExpr(null, boundVars, null, expr);
-        AllGeneratedExprsTypes.Add((forallExpr, type));
+        AllGeneratedExprsTypes.Add((forallExpr, Type.Bool));
         return forallExpr;
     }
 
