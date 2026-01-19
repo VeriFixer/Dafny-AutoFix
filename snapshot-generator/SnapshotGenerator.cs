@@ -61,19 +61,18 @@ public class Enumerator(ErrorReporter reporter) : Rewriter(reporter)
     public static Method? FaultyMethod { get; set; }
     public static readonly List<Expression> ProgramAbstractions = [];
 
-    private readonly ExpressionScanner _scanner = new();
-
     public override void PostResolve(ModuleDefinition module) {
         if (module.Name != "_module") 
             return;
-        
-        _scanner.Visit(module);
+
+        ExpressionScanner scanner = new();
+        scanner.Visit(module);
         if (FaultyMethod == null) return;
         // collect additional predicates from faulty method after fully parsing the AST
-        _scanner.VisitFaultyMethod();
+        scanner.VisitFaultyMethod();
 
         // instrument the program for collecting predicates values at runtime
-        var expressionTraceBuilder = new ExpressionTraceBuilder(_scanner.IdentifierAvailability, _scanner.Ghosts);
+        var expressionTraceBuilder = new ExpressionTraceBuilder(scanner.IdentifierAvailability, scanner.Ghosts);
         expressionTraceBuilder.InstrumentFaultyMethod();
     }
     

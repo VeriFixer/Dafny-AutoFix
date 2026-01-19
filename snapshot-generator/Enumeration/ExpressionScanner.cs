@@ -30,6 +30,12 @@ public class ExpressionScanner() : IdentifierAvailabilityScanner(true)
     }
     
     protected override void HandleMethod(Method method) {
+        // distinguish passing from failing test execution
+        if (_currentTopLevelDecl == "_default" && method.Name == "Passing")
+            AstUtils.PrintTestType(method, true);
+        if (_currentTopLevelDecl == "_default" && method.Name == "Failing")
+            AstUtils.PrintTestType(method, false);
+        
         // find the faulty method, i.e., where the violation occurs  
         if (method.StartToken.line <= SnapshotGenerator.ViolationLine &&
             method.EndToken.line >= SnapshotGenerator.ViolationLine)

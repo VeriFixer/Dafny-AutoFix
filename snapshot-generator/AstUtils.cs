@@ -155,4 +155,17 @@ public static class AstUtils
         } 
         aStStmt.Bounds = ModuleResolver.DiscoverBestBounds_MultipleVars(varLhss, aStStmt.Expr, true);
     }
+    
+    /// -----
+    /// Other
+    /// -----
+    
+    public static void PrintTestType(Method method, bool isPassing) {
+        if (method.Body == null) return;
+        
+        var testType = AstUtils.CreateStringLiteral(method.StartToken, 
+            isPassing ? "Running passing tests\\n" : "Running failing tests\\n");
+        var printStmt = new PrintStmt(method.StartToken, [testType]);
+        method.Body.Body.Insert(0, printStmt);
+    }
 }

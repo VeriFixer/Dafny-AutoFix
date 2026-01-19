@@ -7,7 +7,6 @@ public class DaikonInvariantParser : Visitor
 {
     public static readonly List<(string, string)> TypeInfo = ImportTypeInfo(); // (var name, var type)
     private readonly List<(Expression, int, Statement)> _invariantsPlacement = [];
-    private TopLevelDeclWithMembers? _classUnderVisit;
     private string _enclosingClassName = "";
     private Predicate<Statement>? _findStmtPred;
     private (BlockStmt?, int) _targetStmt = (null, -1);
@@ -60,18 +59,22 @@ public class DaikonInvariantParser : Visitor
     }
 
     protected override void HandleMemberDecls(TopLevelDeclWithMembers decl) {
-        _classUnderVisit = decl;
+        _enclosingClassName = decl.Name;
         base.HandleMemberDecls(decl);
     }
     
     protected override void HandleMethod(Method method) {
+        // distinguish passing from failing test execution
+        if (_enclosingClassName == "_default" && method.Name == "Passing")
+            AstUtils.PrintTestType(method, true);
+        if (_enclosingClassName == "_default" && method.Name == "Failing")
+            AstUtils.PrintTestType(method, false);
+            
         // find the faulty method, i.e., where the violation occurs  
         if (!(method.StartToken.line <= SnapshotGenerator.ViolationLine &&
               method.EndToken.line >= SnapshotGenerator.ViolationLine))
             return;
         InvariantInferrer.FaultyMethod = method;
-        if (_classUnderVisit == null) return;
-        _enclosingClassName = _classUnderVisit.Name;
         base.HandleMethod(method);
     }
 
@@ -119,7 +122,7 @@ public class DaikonInvariantParser : Visitor
             } if (word.StartsWith("__orig__")) {
                 _invalidInvariant = true;
                 return [];
-            };
+            }
             return [new VarSimplifyToken(word)];
         }
         var token = SimplifyToken.GetSimplifyToken(word);
