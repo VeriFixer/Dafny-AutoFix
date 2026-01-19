@@ -10,6 +10,7 @@ public class SnapshotGenerator : PluginConfiguration
 {
     public static int ViolationLine { get; private set; }
     public static int ViolationColumn { get; private set; }
+    public static bool DebugMode { get; private set; }
     private bool _enumeration;
     private bool _invariantInference;
     private bool _invariantParsing;
@@ -35,6 +36,9 @@ public class SnapshotGenerator : PluginConfiguration
         } else if (args[2] == "inv") {
             _invariantParsing = true;
         }
+        
+        if (args.Length == 4 && args[3] == "debug")
+            DebugMode = true;
     }
     
    public override Rewriter[] GetRewriters(ErrorReporter reporter) { 
@@ -77,7 +81,8 @@ public class Enumerator(ErrorReporter reporter) : Rewriter(reporter)
     }
     
     public override void PostResolve(Program program) {
-        SnapshotGenerator.SaveInstrumentedProgram(program);
+        if (SnapshotGenerator.DebugMode)
+            SnapshotGenerator.SaveInstrumentedProgram(program);
     }
 }
 
@@ -109,7 +114,8 @@ public class InvariantInferrer : Rewriter
     }
 
     public override void PostResolve(Program program) {
-        SnapshotGenerator.SaveInstrumentedProgram(program);
+        if (SnapshotGenerator.DebugMode)
+            SnapshotGenerator.SaveInstrumentedProgram(program);
     }
 }
 
@@ -127,6 +133,7 @@ public class InvariantParser(ErrorReporter reporter) : Rewriter(reporter)
     }
     
     public override void PostResolve(Program program) {
-        SnapshotGenerator.SaveInstrumentedProgram(program);
+        if (SnapshotGenerator.DebugMode)
+            SnapshotGenerator.SaveInstrumentedProgram(program);
     }
 }
