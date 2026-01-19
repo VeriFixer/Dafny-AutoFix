@@ -6,7 +6,7 @@ namespace SnapshotGenerator.InvariantInference;
 public class DaikonInvariantParser : Visitor
 {
     public static readonly List<(string, string)> TypeInfo = ImportTypeInfo(); // (var name, var type)
-    private readonly List<(Expression, int, Statement)> _invariantsPlacement = [];
+    private readonly List<(Expression, int, Statement)> _invariantsPlacement = []; // (invariant, location, statement after which invariant should be inserted)
     private string _enclosingClassName = "";
     private Predicate<Statement>? _findStmtPred;
     private (BlockStmt?, int) _targetStmt = (null, -1);
@@ -145,6 +145,8 @@ public class DaikonInvariantParser : Visitor
     /// Instrumentation
     /// -------------------------
     private void FindInvariantPlacement(int location, Expression invariantExpr) {
+        if (_invariantsPlacement.Any(i => i.Item2 == location && i.Item1.ToString() == invariantExpr.ToString()))
+            return;
         var faultyMethod = InvariantInferrer.FaultyMethod;
         if (faultyMethod == null || faultyMethod.Body == null) return;
         
