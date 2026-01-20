@@ -32,7 +32,7 @@ def compute_scores(pass_snapshots, fail_snapshots):
         score = gamma + (alpha / (1 - alpha)) * (1 - beta + (beta * alpha ** num_pass) - (alpha ** num_fail))
         scores[snapshot] = round(score, 5)
     
-    ordered_scores = {k: v for k, v in sorted(scores.items(), key=lambda item: -item[1])}
+    ordered_scores = {k: v for k, v in sorted(scores.items(), key=lambda item: (-item[1], int(item[0][0])))}
     return ordered_scores
 
 
