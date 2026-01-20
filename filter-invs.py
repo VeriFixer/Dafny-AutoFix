@@ -16,6 +16,8 @@ def read_invariants(passing):
                 new_location = True
             elif location != None:
                 location_invs.append(line.strip())
+        if len(location_invs) != 0:
+            invs[location] = location_invs
 
     return invs
 
