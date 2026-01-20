@@ -85,11 +85,11 @@ generate_snapshots() {
     if [[ $enumeration == true ]]; then 
         enumeration_str="enumeration" 
         gen_type_arg="enum"
-        snapshot_output_file="snapshots-enum.txt"
+        snapshot_output_file="snapshots-enum.csv"
     else 
         enumeration_str="invariants"
         gen_type_arg="inv"
-        snapshot_output_file="snapshots-inv.txt"
+        snapshot_output_file="snapshots-inv.csv"
     fi
 
     echo "Generating snapshots via $enumeration_str"
@@ -128,4 +128,8 @@ python3 filter-invs.py
 # Generate snapshots via enumeration and invariants
 
 echo "$(generate_snapshots true $violation_line $violation_col)"
-echo "$(generate_snapshots false $violation_line $violation_col)"
+echo -e "$(generate_snapshots false $violation_line $violation_col)\n"
+
+# Compute the suspiciousness score of each snapshot
+echo "Computing suspiciousness scores"
+python3 compute-suspiciousness.py
