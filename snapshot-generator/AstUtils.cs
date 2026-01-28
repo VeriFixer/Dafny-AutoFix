@@ -93,7 +93,7 @@ public static class AstUtils
         nSegExpr.ResolvedExpression = resolvedExpr;
     }
 
-    public static MemberSelectExpr? CreateMemberSelectExpr(IOrigin token, MemberDecl call, TopLevelDeclWithMembers? enclosingClass, Expression? obj = null) {
+    public static MemberSelectExpr? CreateMemberSelectExpr(IOrigin token, MemberDecl call, TopLevelDeclWithMembers? enclosingClass, Expression? obj = null, Type? type = null) {
         Expression? myObj = null;
         if (enclosingClass != null) {
             if (enclosingClass is DefaultClassDecl) {
@@ -106,10 +106,13 @@ public static class AstUtils
         }
 
         if (myObj == null && obj == null) return null;
-        return new MemberSelectExpr(token, obj ?? myObj, call.NameNode) {
+        var expr = new MemberSelectExpr(token, obj ?? myObj, call.NameNode) {
             Member = call,
             TypeApplicationJustMember = []
         };
+        if (type != null)
+            expr.Type = type;
+        return expr;
     }
 
     public static SpecialField CreateLengthSpecialField(IOrigin token, int? param = null) {

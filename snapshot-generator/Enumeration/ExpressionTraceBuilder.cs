@@ -83,16 +83,55 @@ public sealed class ExpressionTraceBuilder : Visitor
         );
         
         foreach (var expr in availableExprs) {
+            Expression? safetyCheckedExpr = null;
+            var seqSelectSubExprs = expr.Item1.SubExpressions.Where(e => e is SeqSelectExpr).ToList();
+            if (expr.Item1 is SeqSelectExpr seqSelExpr) seqSelectSubExprs.Add(seqSelExpr);
+            if (seqSelectSubExprs.Count > 0)
+                safetyCheckedExpr = HandleSeqSelectExpr(expr.Item1, seqSelectSubExprs) ?? null;
+            
             var posElement = Expression.CreateIntLiteral(token, token.pos);
             var exprStrElement = AstUtils.CreateStringLiteral(token, expr.Item1.ToString());
             var delimElement1 = AstUtils.CreateStringLiteral(token, ",");
             var delimElement2 = AstUtils.CreateStringLiteral(token, "\\n");
             List<Expression> printElements = [
-                posElement, delimElement1, exprStrElement, delimElement1, expr.Item1, delimElement2
+                posElement, delimElement1, exprStrElement, delimElement1, safetyCheckedExpr ?? expr.Item1, delimElement2
             ];
             var newStmt = new PrintStmt(token, printElements);
             _newBlockBody.Add(newStmt);
         }
+    }
+
+    private Expression? HandleSeqSelectExpr(Expression expr, List<Expression> selectExprs) {
+        if (selectExprs.Count == 0 || selectExprs[0] is not SeqSelectExpr seqSelExpr) 
+            return expr;
+
+        var token = seqSelExpr.Seq.Origin;
+        Expression lengthExpr = seqSelExpr.Seq.Type.ToString().StartsWith("array<")
+            ? new ExprDotName(token, seqSelExpr.Seq, new Name(token, "Length"), null) {
+                ResolvedExpression = AstUtils.CreateMemberSelectExpr(
+                    token, AstUtils.CreateLengthSpecialField(token), null, seqSelExpr.Seq, Type.Int
+                ),
+                Type = Type.Int
+            }
+            : new UnaryOpExpr(token, UnaryOpExpr.Opcode.Cardinality, seqSelExpr.Seq) { Type = Type.Int };
+
+        Expression? firstInBoundsExpr = null;
+        Expression? secondInBoundsExpr = null;
+        if (seqSelExpr.E0 != null)
+            firstInBoundsExpr = Expression.CreateLess(seqSelExpr.E0, lengthExpr);
+        if (seqSelExpr.E1 != null)
+            secondInBoundsExpr = Expression.CreateLess(seqSelExpr.E1, lengthExpr);
+        Expression? inBoundsExpr = firstInBoundsExpr != null ? secondInBoundsExpr != null ? 
+            Expression.CreateAnd(firstInBoundsExpr, secondInBoundsExpr) : 
+            firstInBoundsExpr : secondInBoundsExpr;
+        if (inBoundsExpr == null) return null;
+
+        if (selectExprs.Count > 1) {
+            var nextExpr = HandleSeqSelectExpr(expr, selectExprs[1..]);
+            if (nextExpr != null)
+                return Expression.CreateAnd(inBoundsExpr, HandleSeqSelectExpr(expr, selectExprs[1..]));
+        }
+        return Expression.CreateAnd(inBoundsExpr, expr);
     }
     
     private void DetermineIdentifierAvailability(string idName) {
