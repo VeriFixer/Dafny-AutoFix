@@ -85,11 +85,22 @@ public class SimplifyExpression
                 .Select(GetExpressionType)
                 .FirstOrDefault(type => type != null);
         }
+        
+        var nullArgIdx = _args.FindIndex(arg => arg._t.Type == SimplifyToken.SimplifyTokenType.Null);
+        if (nullArgIdx != -1) {
+            _sibblingNodeType = _args.Where((_, i) => i != strArgIdx)
+                .Select(arg => arg.ToExpression())
+                .SelectMany(exprList => exprList)
+                .Select(GetExpressionType)
+                .FirstOrDefault(type => type != null);
+            if (_sibblingNodeType == null || !_sibblingNodeType.ToString().Contains("?"))
+                return [null];
+        }
+        
         var argExprs = _args.Select(arg => arg.ToExpression()).SelectMany(exprList => exprList).ToList();
         _isTopLevelExpr = prevIsTopLevelExpr;
         if (argExprs.Contains(null))
             return [null];
-        
         var expr = _t.Type switch {
             SimplifyToken.SimplifyTokenType.Add => [ToBinaryExpression(BinaryExpr.Opcode.Add, argExprs)],
             SimplifyToken.SimplifyTokenType.Sub => [ToBinaryExpression(BinaryExpr.Opcode.Sub, argExprs)],
@@ -140,6 +151,9 @@ public class SimplifyExpression
     }
 
     private Expression ToBinaryExpression(BinaryExpr.Opcode op, List<Expression?> argExprs) {
+        if (argExprs.Count == 1 && argExprs[0] != null)
+            return argExprs[0];
+        
         Type? type = null;
         Type? argType = null;
         if (op == BinaryExpr.Opcode.Add || op == BinaryExpr.Opcode.Sub || 
