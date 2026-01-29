@@ -52,7 +52,7 @@ def main():
 
     snapshot_scores = compute_scores(pass_snapshots, fail_snapshots)
 
-    with open("snapshots-suspiciouness-score.csv", "w") as f:
+    with open("snapshots-suspiciousness-score.csv", "w") as f:
         for snapshot, score in snapshot_scores.items():
             source = "both" if snapshot in enum_snapshots and snapshot in inv_snapshots \
                 else "enum" if snapshot in enum_snapshots else "inv"
