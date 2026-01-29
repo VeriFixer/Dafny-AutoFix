@@ -57,11 +57,19 @@ public class IdentifierAvailabilityScanner(bool multipleModule = false) : Visito
             return;
         _foundFaultyMethod = true;
         
-        foreach (var input in method.Ins)
+        foreach (var input in method.Ins) {
             IdentifierAvailability.Add((
-                input, null, input.Name, input.Type, 
+                input, null, input.Name, input.Type,
                 method.StartToken.pos, method.EndToken.pos
             ));
+            if (input.IsGhost)
+                Ghosts.Add(input.Name);
+        }
+        foreach (var output in method.Outs) {
+            if (output.IsGhost)
+                Ghosts.Add(output.Name);
+        }
+        
         _currentMethodOutputs = method.Outs;
         base.HandleMethod(method);
         _currentMethodOutputs = [];

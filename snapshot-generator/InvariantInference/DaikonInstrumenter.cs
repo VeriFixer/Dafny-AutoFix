@@ -158,10 +158,10 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
             _newStmts.Add(new PrintStmt(mainMethod.Origin, [declarationElement]));
 
 
-            foreach (var input in method.Ins)
+            foreach (var input in method.Ins.Where(i => !i.IsGhost))
                 AddVariableDeclaration(input, mainMethod.Origin);
             if (type == "EXIT00") {
-                foreach (var output in method.Outs)
+                foreach (var output in method.Outs.Where(o => !o.IsGhost))
                     AddVariableDeclaration(output, mainMethod.Origin);
             }
             
@@ -233,10 +233,10 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
         var declarationElement = AstUtils.CreateStringLiteral(method.Origin, programPoint);
         newStmts.Add(new PrintStmt(method.Origin, [declarationElement]));
         
-        foreach (var input in method.Ins)
+        foreach (var input in method.Ins.Where(i => !i.IsGhost))
             newStmts.AddRange(AddVariableTracePoint(method, input));
         if (!isEntrance) {
-            foreach (var output in method.Outs)
+            foreach (var output in method.Outs.Where(o => !o.IsGhost))
                 newStmts.AddRange(AddVariableTracePoint(method, output));
         }
         
