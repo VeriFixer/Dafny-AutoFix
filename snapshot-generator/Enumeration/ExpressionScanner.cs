@@ -7,7 +7,10 @@ public class ExpressionScanner() : IdentifierAvailabilityScanner(true)
 {
     private readonly List<Expression> _integerExprs = [];
     private readonly List<(string, Type, string)> _allArgumentlessPreds = []; // (scope, return type, predicate name)
+    private List<string> _varsToAvoid = [];
     private string _currentTopLevelDecl = "";
+    private bool _avoidCurrentlyVisitingExpr;
+    private string? _parentExpr;
     
     /// -------------------------
     /// General AST node visitors
@@ -71,15 +74,46 @@ public class ExpressionScanner() : IdentifierAvailabilityScanner(true)
     }
 
     protected override void HandleExpression(Expression expr) {
-        CollectExpressions(expr);
-        CollectArgumentlessCalls(expr);
+        var prevParentExpr = _parentExpr;
+        var prevAvoidCurrentlyVisitingExpr = _avoidCurrentlyVisitingExpr;
+        _parentExpr = expr.ToString();
+        if (_avoidCurrentlyVisitingExpr || 
+            _varsToAvoid.Contains(expr.ToString()) ||
+            expr.SubExpressions
+                .Select(e => e.ToString())
+                .Any(e => _varsToAvoid.Contains(e)))
+        {
+            _avoidCurrentlyVisitingExpr = true;
+            return; 
+        }
         base.HandleExpression(expr);
+        if (!_avoidCurrentlyVisitingExpr) {
+            CollectExpressions(expr);
+            CollectArgumentlessCalls(expr);     
+        }
+        _parentExpr = prevParentExpr;
+        if (_parentExpr == null)
+            _avoidCurrentlyVisitingExpr = prevAvoidCurrentlyVisitingExpr;
     }
     
     protected override void VisitExpression(BinaryExpr bExpr) {
-        if (bExpr.Op == BinaryExpr.Opcode.Imp)
-            CollectImpliesMutations(bExpr);
         base.VisitExpression(bExpr);
+        if (bExpr.Op == BinaryExpr.Opcode.Imp && !_avoidCurrentlyVisitingExpr)
+            CollectImpliesMutations(bExpr);
+    }
+    
+    protected override void VisitStatement(ForallStmt forStmt) {
+        foreach (var boundVar in forStmt.BoundVars) {
+            _varsToAvoid.Add(boundVar.Name);
+        }
+        base.VisitStatement(forStmt);
+    }
+    
+    protected override void VisitExpression(ComprehensionExpr compExpr) {
+        foreach (var boundVar in compExpr.BoundVars) {
+            _varsToAvoid.Add(boundVar.Name);
+        }
+        base.VisitExpression(compExpr);
     }
 
     /// -------------------------
