@@ -5,6 +5,8 @@ namespace SnapshotGenerator.Enumeration;
 
 public class ExpressionScanner() : IdentifierAvailabilityScanner(true)
 {
+    public static readonly List<Expression> SeqSelectExprs = [];
+    public static readonly List<Expression> MapSelectExprs = [];
     private readonly List<Expression> _integerExprs = [];
     private readonly List<(string, Type, string)> _allArgumentlessPreds = []; // (scope, return type, predicate name)
     private List<string> _varsToAvoid = [];
@@ -100,6 +102,15 @@ public class ExpressionScanner() : IdentifierAvailabilityScanner(true)
         base.VisitExpression(bExpr);
         if (bExpr.Op == BinaryExpr.Opcode.Imp && !_avoidCurrentlyVisitingExpr)
             CollectImpliesMutations(bExpr);
+    }
+    
+    protected override void VisitExpression(SeqSelectExpr seqSExpr) {
+        if (seqSExpr.Seq.Type is SeqType || seqSExpr.Seq.Type.ToString().StartsWith("array") && 
+            SeqSelectExprs.All(e => e.ToString() != seqSExpr.ToString()))
+            SeqSelectExprs.Add(seqSExpr);
+        if (seqSExpr.Seq.Type is MapType && MapSelectExprs.All(e => e.ToString() != seqSExpr.ToString()))
+            MapSelectExprs.Add(seqSExpr);
+        base.VisitExpression(seqSExpr);
     }
     
     protected override void VisitStatement(ForallStmt forStmt) {

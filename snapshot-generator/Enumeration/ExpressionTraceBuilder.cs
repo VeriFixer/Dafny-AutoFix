@@ -83,11 +83,21 @@ public sealed class ExpressionTraceBuilder : Visitor
         );
         
         foreach (var expr in availableExprs) {
-            Expression? safetyCheckedExpr = null;
-            var seqSelectSubExprs = expr.Item1.SubExpressions.Where(e => e is SeqSelectExpr).ToList();
-            if (expr.Item1 is SeqSelectExpr seqSelExpr) seqSelectSubExprs.Add(seqSelExpr);
+            Expression? seqSafetyCheckedExpr = null;
+            Expression? mapSafetyCheckedExpr = null;
+            var seqSelectSubExprs = ExpressionScanner.SeqSelectExprs
+                .Where(e => expr.ToString().Contains(e.ToString())).ToList();
             if (seqSelectSubExprs.Count > 0)
-                safetyCheckedExpr = HandleSeqSelectExpr(expr.Item1, seqSelectSubExprs) ?? null;
+                seqSafetyCheckedExpr = HandleSeqSelectExpr(seqSelectSubExprs) ?? null;
+            var mapSelectSubExprs = ExpressionScanner.MapSelectExprs
+                .Where(e => expr.ToString().Contains(e.ToString())).ToList();
+            if (seqSelectSubExprs.Count > 0)
+                mapSafetyCheckedExpr = HandleMapSelectExpr(mapSelectSubExprs);
+            Expression? safetyCheckedExpr = seqSafetyCheckedExpr != null ? mapSafetyCheckedExpr != null ? 
+                Expression.CreateAnd(Expression.CreateAnd(seqSafetyCheckedExpr, mapSafetyCheckedExpr), expr.Item1) : 
+                Expression.CreateAnd(seqSafetyCheckedExpr, expr.Item1) : 
+                mapSafetyCheckedExpr != null ? Expression.CreateAnd(mapSafetyCheckedExpr, expr.Item1) : null;
+            
             
             var posElement = Expression.CreateIntLiteral(token, token.pos);
             var exprStrElement = AstUtils.CreateStringLiteral(token, expr.Item1.ToString());
@@ -101,9 +111,9 @@ public sealed class ExpressionTraceBuilder : Visitor
         }
     }
 
-    private Expression? HandleSeqSelectExpr(Expression expr, List<Expression> selectExprs) {
+    private Expression? HandleSeqSelectExpr(List<Expression> selectExprs) {
         if (selectExprs.Count == 0 || selectExprs[0] is not SeqSelectExpr seqSelExpr) 
-            return expr;
+            return null;
 
         var token = seqSelExpr.Seq.Origin;
         Expression lengthExpr = seqSelExpr.Seq.Type.ToString().StartsWith("array<")
@@ -127,11 +137,24 @@ public sealed class ExpressionTraceBuilder : Visitor
         if (inBoundsExpr == null) return null;
 
         if (selectExprs.Count > 1) {
-            var nextExpr = HandleSeqSelectExpr(expr, selectExprs[1..]);
+            var nextExpr = HandleSeqSelectExpr(selectExprs[1..]);
             if (nextExpr != null)
-                return Expression.CreateAnd(inBoundsExpr, HandleSeqSelectExpr(expr, selectExprs[1..]));
+                return Expression.CreateAnd(inBoundsExpr, nextExpr);
         }
-        return Expression.CreateAnd(inBoundsExpr, expr);
+        return inBoundsExpr;
+    }
+    
+    private Expression? HandleMapSelectExpr(List<Expression> selectExprs) {
+        if (selectExprs.Count == 0 || selectExprs[0] is not SeqSelectExpr seqSelExpr || seqSelExpr.E0 == null) 
+            return null;
+        
+        var inMapExpr = AstUtils.CreateIn(seqSelExpr.E0, seqSelExpr.Seq, seqSelExpr.Seq.Type);
+        if (selectExprs.Count > 1) {
+            var nextExpr = HandleMapSelectExpr(selectExprs[1..]);
+            if (nextExpr != null)
+                return Expression.CreateAnd(inMapExpr, nextExpr);
+        }
+        return inMapExpr;
     }
     
     private void DetermineIdentifierAvailability(string idName) {
