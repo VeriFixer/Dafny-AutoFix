@@ -12,11 +12,11 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
     
     public void Instrument(ModuleDefinition module) {
         Visit(module);
-        if (InvariantInferrer.MainMethod == null || 
-            InvariantInferrer.FaultyMethod == null)
+        if (SnapshotGenerator.MainMethod == null || 
+            SnapshotGenerator.FaultyMethod == null)
             return;
-        var mainMethod = InvariantInferrer.MainMethod;
-        var faultyMethod = InvariantInferrer.FaultyMethod;
+        var mainMethod = SnapshotGenerator.MainMethod;
+        var faultyMethod = SnapshotGenerator.FaultyMethod;
         AdjustTestExecution(mainMethod);
         
         AddHeader();
@@ -40,12 +40,12 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
     protected override void HandleMethod(Method method) {
         // find Main, i.e., entrypoint, where the faulty method is being exercised
         if (method.Name == "Main")
-            InvariantInferrer.MainMethod = method;
+            SnapshotGenerator.MainMethod = method;
         // find the faulty method, i.e., where the violation occurs  
         if (!(method.StartToken.line <= SnapshotGenerator.ViolationLine &&
               method.EndToken.line >= SnapshotGenerator.ViolationLine))
             return;
-        InvariantInferrer.FaultyMethod = method;
+        SnapshotGenerator.FaultyMethod = method;
         
         // instrument the method with calls to dummy methods for invariant inferrence
         if (method.Body != null)
@@ -134,7 +134,7 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
     /// Daikon
     /// -------------------------
     private void AddHeader() {
-        var method = InvariantInferrer.FaultyMethod;
+        var method = SnapshotGenerator.FaultyMethod;
         if (method == null) return;
         
         var headerElement = AstUtils.CreateStringLiteral(method.Origin, "decl-version 2.0\\n");
@@ -146,7 +146,7 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
     }
 
     private void AddMethodDeclaration(Method method) {
-        var mainMethod = InvariantInferrer.MainMethod;
+        var mainMethod = SnapshotGenerator.MainMethod;
         if (mainMethod == null) return;
         
         foreach (var type in new List<string> { "ENTER", "EXIT00" }) {

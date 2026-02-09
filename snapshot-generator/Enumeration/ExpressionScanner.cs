@@ -32,19 +32,30 @@ public class ExpressionScanner() : IdentifierAvailabilityScanner(true)
     protected override void HandleMemberDecls(TopLevelDeclWithMembers decl) {  
         _currentTopLevelDecl = decl.Name;
         base.HandleMemberDecls(decl);
+        
+        if (SnapshotGenerator.FaultyMethod == null ||
+            SnapshotGenerator.PassingTestsMethod == null ||
+            SnapshotGenerator.FailingTestsMethod == null) 
+            return;
+        AstUtils.PrintTestCases(SnapshotGenerator.PassingTestsMethod);
+        AstUtils.PrintTestCases(SnapshotGenerator.FailingTestsMethod);
     }
     
     protected override void HandleMethod(Method method) {
         // distinguish passing from failing test execution
-        if (_currentTopLevelDecl == "_default" && method.Name == "Passing")
+        if (_currentTopLevelDecl == "_default" && method.Name == "Passing") {
+            SnapshotGenerator.PassingTestsMethod = method;
             AstUtils.PrintTestType(method, true);
-        if (_currentTopLevelDecl == "_default" && method.Name == "Failing")
+        }
+        if (_currentTopLevelDecl == "_default" && method.Name == "Failing") {
+            SnapshotGenerator.FailingTestsMethod = method;
             AstUtils.PrintTestType(method, false);
+        }
         
         // find the faulty method, i.e., where the violation occurs  
         if (method.StartToken.line <= SnapshotGenerator.ViolationLine &&
             method.EndToken.line >= SnapshotGenerator.ViolationLine)
-            Enumerator.FaultyMethod = method;
+            SnapshotGenerator.FaultyMethod = method;
         base.HandleMethod(method);
     }
     
@@ -66,7 +77,7 @@ public class ExpressionScanner() : IdentifierAvailabilityScanner(true)
     /// Faulty method visit
     /// -------------------------
     public void VisitFaultyMethod() {
-        var faultyMethod = Enumerator.FaultyMethod;
+        var faultyMethod = SnapshotGenerator.FaultyMethod;
         if (faultyMethod == null)
             return;
         

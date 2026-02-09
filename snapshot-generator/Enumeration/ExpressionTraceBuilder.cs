@@ -32,7 +32,7 @@ public sealed class ExpressionTraceBuilder : Visitor
     }
     
     public void InstrumentFaultyMethod() {
-        var faultyMethod = Enumerator.FaultyMethod;
+        var faultyMethod = SnapshotGenerator.FaultyMethod;
         if (faultyMethod == null)
             return;
         

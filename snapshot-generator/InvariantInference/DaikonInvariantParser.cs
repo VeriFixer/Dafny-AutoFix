@@ -13,9 +13,9 @@ public class DaikonInvariantParser : Visitor
     
     public void Parse(ModuleDefinition module) {
         Visit(module);
-        if (InvariantInferrer.FaultyMethod == null)
+        if (SnapshotGenerator.FaultyMethod == null || InvariantParser.InvariantsAlreadyParsed)
             return;
-        var faultyMethod = InvariantInferrer.FaultyMethod;
+        var faultyMethod = SnapshotGenerator.FaultyMethod;
         if (faultyMethod.Body == null) return;
 
         int location = module.StartToken.pos;
@@ -39,6 +39,7 @@ public class DaikonInvariantParser : Visitor
             }
         }
         InstrumentWithInvariants();
+        InvariantParser.InvariantsAlreadyParsed = true;
     }
 
     private static List<(string, string)> ImportTypeInfo() {
@@ -61,20 +62,31 @@ public class DaikonInvariantParser : Visitor
     protected override void HandleMemberDecls(TopLevelDeclWithMembers decl) {
         _enclosingClassName = decl.Name;
         base.HandleMemberDecls(decl);
+        
+        if (SnapshotGenerator.FaultyMethod == null ||
+            SnapshotGenerator.PassingTestsMethod == null ||
+            SnapshotGenerator.FailingTestsMethod == null) 
+            return;
+        AstUtils.PrintTestCases(SnapshotGenerator.PassingTestsMethod);
+        AstUtils.PrintTestCases(SnapshotGenerator.FailingTestsMethod);
     }
     
     protected override void HandleMethod(Method method) {
         // distinguish passing from failing test execution
-        if (_enclosingClassName == "_default" && method.Name == "Passing")
+        if (_enclosingClassName == "_default" && method.Name == "Passing") {
+            SnapshotGenerator.PassingTestsMethod = method;
             AstUtils.PrintTestType(method, true);
-        if (_enclosingClassName == "_default" && method.Name == "Failing")
+        }
+        if (_enclosingClassName == "_default" && method.Name == "Failing") {
+            SnapshotGenerator.FailingTestsMethod = method;
             AstUtils.PrintTestType(method, false);
+        }
             
         // find the faulty method, i.e., where the violation occurs  
         if (!(method.StartToken.line <= SnapshotGenerator.ViolationLine &&
               method.EndToken.line >= SnapshotGenerator.ViolationLine))
             return;
-        InvariantInferrer.FaultyMethod = method;
+        SnapshotGenerator.FaultyMethod = method;
         base.HandleMethod(method);
     }
 
@@ -147,7 +159,7 @@ public class DaikonInvariantParser : Visitor
     private void FindInvariantPlacement(int location, Expression invariantExpr) {
         if (_invariantsPlacement.Any(i => i.Item2 == location && i.Item1.ToString() == invariantExpr.ToString()))
             return;
-        var faultyMethod = InvariantInferrer.FaultyMethod;
+        var faultyMethod = SnapshotGenerator.FaultyMethod;
         if (faultyMethod == null || faultyMethod.Body == null) return;
         
         if (location == faultyMethod.Body.StartToken.pos) {
@@ -167,7 +179,7 @@ public class DaikonInvariantParser : Visitor
     }
     
     private void InstrumentWithInvariants() {
-        var faultyMethod = InvariantInferrer.FaultyMethod;
+        var faultyMethod = SnapshotGenerator.FaultyMethod;
         if (faultyMethod == null || faultyMethod.Body == null) return;
 
         foreach (var (inv, location, placement) in _invariantsPlacement) {

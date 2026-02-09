@@ -4,14 +4,20 @@ def read_snapshots(enumeration):
 
     with open("snapshots-enum.csv" if enumeration else "snapshots-inv.csv", 'r') as file:
         passing = None
+        current_test_case_snapshots = set()
         for line in file:
             if line.strip() == "Running passing tests":
                 passing = True
             elif line.strip() == "Running failing tests":
                 passing = False
+            elif line.strip() == "Running test case":
+                current_test_case_snapshots = set()
             elif passing != None:
                 collection = pass_snapshots if passing else fail_snapshots
                 snapshot = tuple(line.strip().split(','))
+                if snapshot in current_test_case_snapshots:
+                    continue
+                current_test_case_snapshots.add(snapshot)
                 if snapshot in collection:
                     collection[snapshot] += 1
                 else:

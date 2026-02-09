@@ -162,13 +162,35 @@ public static class AstUtils
     /// -----
     /// Other
     /// -----
-    
     public static void PrintTestType(Method method, bool isPassing) {
         if (method.Body == null) return;
         
-        var testType = AstUtils.CreateStringLiteral(method.StartToken, 
+        var testType = CreateStringLiteral(method.StartToken, 
             isPassing ? "Running passing tests\\n" : "Running failing tests\\n");
         var printStmt = new PrintStmt(method.StartToken, [testType]);
         method.Body.Body.Insert(0, printStmt);
+    }
+
+    public static void PrintTestCases(Method method) {
+        if (method.Body == null) return;
+
+        var testCaseStr = CreateStringLiteral(method.StartToken, "Running test case\\n");
+        var printStmt = new PrintStmt(method.StartToken, [testCaseStr]);
+
+        foreach (var stmt in method.Body.Body.ToList()) {
+            var isVarDecl = stmt is VarDeclStmt { Assign: AssignStatement { Rhss: 
+                [ExprRhs { Expr: ApplySuffix appSufExpr1 } ] } } &&
+                (appSufExpr1.Lhs is NameSegment nSegExpr1 && nSegExpr1.Name == SnapshotGenerator.FaultyMethod?.Name || 
+                 appSufExpr1.Lhs is ExprDotName exprDotName1 && exprDotName1.SuffixName == SnapshotGenerator.FaultyMethod?.Name);
+            var isAssign = stmt is AssignStatement { Rhss: 
+                [ExprRhs { Expr: ApplySuffix appSufExpr2 } ] } &&
+                (appSufExpr2.Lhs is NameSegment nSegExpr2 && nSegExpr2.Name == SnapshotGenerator.FaultyMethod?.Name || 
+                 appSufExpr2.Lhs is ExprDotName exprDotName2 && exprDotName2.SuffixName == SnapshotGenerator.FaultyMethod?.Name);
+            
+            if (isVarDecl || isAssign) {
+                var idx = method.Body.Body.IndexOf(stmt);
+                method.Body.Body.Insert(idx, printStmt);
+            }
+        }
     }
 }
