@@ -6,9 +6,11 @@ namespace SnapshotGenerator.InvariantInference;
 public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int?, int?)> identifierAvailability) : Visitor(true)
 {
     private TopLevelDeclWithMembers? _currentTopLevelDecl;
+    private BlockStmt? _currentBlock;
     private readonly List<Method> _newMethods = [];
     private List<Statement> _newBlockBody = [];
     private readonly List<Statement> _newStmts = [];
+    private readonly List<(ReturnStmt, BlockStmt)> _returnStmts = [];
     
     public void Instrument(ModuleDefinition module) {
         Visit(module);
@@ -47,7 +49,7 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
             return;
         SnapshotGenerator.FaultyMethod = method;
         
-        // instrument the method with calls to dummy methods for invariant inferrence
+        // instrument the method with calls to dummy methods for invariant inference
         if (method.Body != null)
             HandleBlock(method.Body);
     }
@@ -56,16 +58,24 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
     /// Instrumentation
     /// -------------------------
     protected override void HandleBlock(BlockStmt blockStmt) {
+        _currentBlock = blockStmt;
         var prevNewBlock = _newBlockBody;
         _newBlockBody = [];
         foreach (var (stmt, i) in blockStmt.Body.Select((stmt, i) => (stmt, i))) {
             _newBlockBody.Add(stmt);
             HandleStatement(stmt);
+            _currentBlock = blockStmt;
             if (i != blockStmt.Body.Count - 1)
                 InstrumentLine(stmt.EndToken);
         }
         blockStmt.Body = _newBlockBody;
         _newBlockBody = prevNewBlock;
+    }
+    
+    protected override void VisitStatement(ProduceStmt pStmt) {
+        if (pStmt is ReturnStmt rStmt && _currentBlock != null)
+            _returnStmts.Add((rStmt, _currentBlock));
+        base.VisitStatement(pStmt);
     }
 
     private void InstrumentLine(IOrigin token) {
@@ -148,8 +158,14 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
     private void AddMethodDeclaration(Method method) {
         var mainMethod = SnapshotGenerator.MainMethod;
         if (mainMethod == null) return;
+
+        List<string> pointTypes = ["ENTER", "EXIT00"];
+        if (method.Name == SnapshotGenerator.FaultyMethod?.Name) {
+            for (var i = 0; i < _returnStmts.Count; i++)
+                pointTypes.Add($"EXIT{i + 1}");
+        }
         
-        foreach (var type in new List<string> { "ENTER", "EXIT00" }) {
+        foreach (var type in pointTypes) {
             var programPointDecl = $"ppt {method.FullSanitizedName}():::{type}\\n";
             var declarationElement = AstUtils.CreateStringLiteral(mainMethod.Origin, programPointDecl);
             _newStmts.Add(new PrintStmt(mainMethod.Origin, [declarationElement]));
@@ -160,7 +176,7 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
 
             foreach (var input in method.Ins.Where(i => !i.IsGhost))
                 AddVariableDeclaration(input, mainMethod.Origin);
-            if (type == "EXIT00") {
+            if (type.StartsWith("EXIT")) {
                 foreach (var output in method.Outs.Where(o => !o.IsGhost))
                     AddVariableDeclaration(output, mainMethod.Origin);
             }
@@ -215,27 +231,33 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
 
     private void AddMethodTracePoints(Method method) {
         // Add points at the method's entrance
-        var newStmts = AddMethodTracePoints(method, true);
+        var newStmts = AddMethodTracePoints(method, "ENTER");
         if (method.Body == null) {
             method.Body = new BlockStmt(method.Origin, newStmts);
         } else {
             method.Body.Body = newStmts.Concat(method.Body.Body).ToList();
         }
-        // Add points at the method's exit
-        newStmts = AddMethodTracePoints(method, false);
+        // Add points at the method's exit(s)
+        if (method.Name == SnapshotGenerator.FaultyMethod?.Name) {
+            foreach (var ((rStmt, block), i) in _returnStmts.Select((e, i) => (e, i))) {
+                newStmts = AddMethodTracePoints(method, $"EXIT{i + 1}");
+                var idx = block.Body.IndexOf(rStmt);
+                block.Body.InsertRange(idx, newStmts);
+            }
+        }
+        newStmts = AddMethodTracePoints(method, "EXIT00");
         method.Body.Body.AddRange(newStmts);
     }
     
-    private List<Statement> AddMethodTracePoints(Method method, bool isEntrance) {
+    private List<Statement> AddMethodTracePoints(Method method, string ppt) {
         List<Statement> newStmts = [];
-        var type = isEntrance ? "ENTER" : "EXIT00";
-        var programPoint = $"{method.FullSanitizedName}():::{type}\\n";
+        var programPoint = $"{method.FullSanitizedName}():::{ppt}\\n";
         var declarationElement = AstUtils.CreateStringLiteral(method.Origin, programPoint);
         newStmts.Add(new PrintStmt(method.Origin, [declarationElement]));
         
         foreach (var input in method.Ins.Where(i => !i.IsGhost))
             newStmts.AddRange(AddVariableTracePoint(method, input));
-        if (!isEntrance) {
+        if (ppt.StartsWith("EXIT")) {
             foreach (var output in method.Outs.Where(o => !o.IsGhost))
                 newStmts.AddRange(AddVariableTracePoint(method, output));
         }
