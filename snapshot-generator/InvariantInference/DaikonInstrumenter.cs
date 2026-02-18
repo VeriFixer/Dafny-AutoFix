@@ -10,7 +10,7 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
     private readonly List<Method> _newMethods = [];
     private List<Statement> _newBlockBody = [];
     private readonly List<Statement> _newStmts = [];
-    private readonly List<(ReturnStmt, BlockStmt)> _returnStmts = [];
+    private readonly List<(ReturnStmt, BlockStmt)> _returnStmts = []; // (return stmt, enclosing block)
     
     public void Instrument(ModuleDefinition module) {
         Visit(module);
