@@ -58,16 +58,23 @@ public class DaikonInstrumenter(List<Identifier> identifierAvailability) : Visit
     /// Instrumentation
     /// -------------------------
     protected override void HandleBlock(BlockStmt blockStmt) {
+        var faultyMethod = SnapshotGenerator.FaultyMethod;
+        
         _currentBlock = blockStmt;
         var prevNewBlock = _newBlockBody;
         _newBlockBody = [];
+        
+        if (blockStmt != faultyMethod?.Body)
+            InstrumentLine(blockStmt.StartToken);
         foreach (var (stmt, i) in blockStmt.Body.Select((stmt, i) => (stmt, i))) {
             _newBlockBody.Add(stmt);
             HandleStatement(stmt);
             _currentBlock = blockStmt;
-            if (i != blockStmt.Body.Count - 1)
-                InstrumentLine(stmt.EndToken);
+            if (stmt is ReturnStmt || (i == blockStmt.Body.Count - 1 && blockStmt == faultyMethod?.Body))
+                continue;
+            InstrumentLine(stmt.EndToken);
         }
+        
         blockStmt.Body = _newBlockBody;
         _newBlockBody = prevNewBlock;
     }
