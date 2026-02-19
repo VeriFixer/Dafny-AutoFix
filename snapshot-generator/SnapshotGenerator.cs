@@ -109,7 +109,7 @@ public class InvariantInferrer : Rewriter
         IdentifierAvailabilityScanner scanner = new(true);
         scanner.Visit(module);
         var traceIdentifiers = scanner.IdentifierAvailability.Where(
-            expr => !scanner.Ghosts.Contains(expr.Item3)
+            expr => !scanner.Ghosts.Contains(expr.Name)
         ).ToList();
         DaikonInstrumenter instrumenter = new(traceIdentifiers);
         instrumenter.Instrument(module);

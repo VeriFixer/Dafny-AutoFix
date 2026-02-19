@@ -5,7 +5,7 @@ namespace SnapshotGenerator.Enumeration;
 
 public sealed class ExpressionTraceBuilder : Visitor
 {
-    private List<(IVariable?, MemberDecl?, string, Type, int?, int?)> IdentifierAvailability { get; }
+    private List<Identifier> IdentifierAvailability { get; }
     private List<string> Ghosts { get; }
     private readonly List<(Expression, int?, int?)> _exprAvailabilityScope;
     private List<Statement> _newBlockBody = [];
@@ -15,7 +15,7 @@ public sealed class ExpressionTraceBuilder : Visitor
     private bool _hasGhostChild;
     private bool _hasIdentifierChild;
 
-    public ExpressionTraceBuilder(List<(IVariable?, MemberDecl?, string, Type, int?, int?)> identifierAvailability, List<string> ghosts) {
+    public ExpressionTraceBuilder(List<Identifier> identifierAvailability, List<string> ghosts) {
         IdentifierAvailability = identifierAvailability;
         Ghosts = ghosts;
         _exprAvailabilityScope = [];
@@ -158,9 +158,9 @@ public sealed class ExpressionTraceBuilder : Visitor
     }
     
     private void DetermineIdentifierAvailability(string idName) {
-        var identifier = IdentifierAvailability.Find((id) => id.Item3 == idName);
-        var identifierAvailabilityScopeStart = identifier.Item5;
-        var identifierAvailabilityScopeEnd = identifier.Item6;
+        var identifier = IdentifierAvailability.Find((id) => id.Name == idName);
+        var identifierAvailabilityScopeStart = identifier?.AvailabilityStartPos;
+        var identifierAvailabilityScopeEnd = identifier?.AvailabilityEndPos;
         
         if (_currentExprAvailabilityScopeStart == null ||
             (identifierAvailabilityScopeStart != null && 

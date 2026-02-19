@@ -12,57 +12,57 @@ public static class DaikonFormatConverter
     /// -------------------------
     /// Values
     /// -------------------------
-    public static Statement? ToDaikonValue(IOrigin token, Formal f, Expression? expr = null, Expression? delim = null) {
-        return (expr != null ? expr.Type.ToString() : f.Type.ToString()) switch {
-            "int" or "nat" or "real" => CreatePrintStmt(token, ToNumericalValue(f, expr), delim),
-            "bool" => CreatePrintStmt(token, ToBooleanValue(token, f, expr), delim),
-            "char" => CreatePrintStmt(token, ToCharValue(token, f, expr), delim),
-            "string" => CreatePrintStmt(token, ToStringValue(token, f, expr), delim),
-            var t when t.StartsWith("seq<") => ToSequenceValue(token, f, expr),
-            var t when t.StartsWith("array<") => ToArrayValue(token, f, expr),
-            var t when t.StartsWith("array") => ToMultiDimArrayValue(token, f, expr),
-            var t when t.StartsWith("set<") => ToSetValue(token, f, expr),
-            var t when t.StartsWith("multiset<") => ToSetValue(token, f, expr),
-            var t when t.StartsWith("map<") => ToMapValue(token, f, expr),
+    public static Statement? ToDaikonValue(IOrigin token, Identifier id, Expression? expr = null, Expression? delim = null) {
+        return (expr != null ? expr.Type.ToString() : id.Type.ToString()) switch {
+            "int" or "nat" or "real" => CreatePrintStmt(token, ToNumericalValue(id, expr), delim),
+            "bool" => CreatePrintStmt(token, ToBooleanValue(token, id, expr), delim),
+            "char" => CreatePrintStmt(token, ToCharValue(token, id, expr), delim),
+            "string" => CreatePrintStmt(token, ToStringValue(token, id, expr), delim),
+            var t when t.StartsWith("seq<") => ToSequenceValue(token, id, expr),
+            var t when t.StartsWith("array<") => ToArrayValue(token, id, expr),
+            var t when t.StartsWith("array") => ToMultiDimArrayValue(token, id, expr),
+            var t when t.StartsWith("set<") => ToSetValue(token, id, expr),
+            var t when t.StartsWith("multiset<") => ToSetValue(token, id, expr),
+            var t when t.StartsWith("map<") => ToMapValue(token, id, expr),
             _ => null
         };
     }
 
-    private static List<Expression> ToNumericalValue(Formal f, Expression? expr = null) {
-        var varValue = new NameSegment(f.Origin, f.Name, null);
-        AstUtils.ResolveNameSegment(varValue, f.Type, f, null);
+    private static List<Expression> ToNumericalValue(Identifier id, Expression? expr = null) {
+        var varValue = new NameSegment(id.Origin, id.Name, null);
+        AstUtils.ResolveNameSegment(varValue, id);
         return [expr ?? varValue];
     }
 
-    private static List<Expression> ToBooleanValue(IOrigin token, Formal f, Expression? expr = null) {
-        var varValue = new NameSegment(f.Origin, f.Name, null);
-        AstUtils.ResolveNameSegment(varValue, f.Type, f, null);
+    private static List<Expression> ToBooleanValue(IOrigin token, Identifier id, Expression? expr = null) {
+        var varValue = new NameSegment(id.Origin, id.Name, null);
+        AstUtils.ResolveNameSegment(varValue, id);
         var trueValue = Expression.CreateIntLiteral(token, 1);
         var falseValue = Expression.CreateIntLiteral(token, 0);
         var iteExpr = Expression.CreateITE(expr ?? varValue, trueValue, falseValue);
         return [iteExpr];
     }
 
-    private static List<Expression> ToCharValue(IOrigin token, Formal f, Expression? expr = null) {
-        var varValue = new NameSegment(f.Origin, f.Name, null);
-        AstUtils.ResolveNameSegment(varValue, f.Type, f, null);
-        var seqDisplay = new SeqDisplayExpr(f.Origin, [expr ?? varValue]) {
+    private static List<Expression> ToCharValue(IOrigin token, Identifier id, Expression? expr = null) {
+        var varValue = new NameSegment(id.Origin, id.Name, null);
+        AstUtils.ResolveNameSegment(varValue, id);
+        var seqDisplay = new SeqDisplayExpr(id.Origin, [expr ?? varValue]) {
             Type = Type.ResolvedString()
         }; // string is seq<char>
         var quoteElement = AstUtils.CreateStringLiteral(token, $"{(_shouldEscapeQuotes ? "\\\\" : "")}\\\"");
         return [quoteElement, seqDisplay, quoteElement];
     }
 
-    private static List<Expression> ToStringValue(IOrigin token, Formal f, Expression? expr = null) {
-        var varValue = new NameSegment(f.Origin, f.Name, null);
-        AstUtils.ResolveNameSegment(varValue, f.Type, f, null);
+    private static List<Expression> ToStringValue(IOrigin token, Identifier id, Expression? expr = null) {
+        var varValue = new NameSegment(id.Origin, id.Name, null);
+        AstUtils.ResolveNameSegment(varValue, id);
         var quoteElement = AstUtils.CreateStringLiteral(token, $"{(_shouldEscapeQuotes ? "\\\\" : "")}\\\"");
         return [quoteElement, expr ?? varValue, quoteElement];
     }
 
-    private static BlockStmt ToSequenceValue(IOrigin token, Formal f, Expression? expr = null) {
-        var varValue = new NameSegment(token, f.Name, null);
-        AstUtils.ResolveNameSegment(varValue, f.Type, f, null);
+    private static BlockStmt ToSequenceValue(IOrigin token, Identifier id, Expression? expr = null) {
+        var varValue = new NameSegment(token, id.Name, null);
+        AstUtils.ResolveNameSegment(varValue, id);
         
         var seqLengthExpr = new UnaryOpExpr(token, UnaryOpExpr.Opcode.Cardinality, expr ?? varValue) {
             Type = Type.Int
@@ -70,7 +70,7 @@ public static class DaikonFormatConverter
         var prevShouldEscapeQuotes = _shouldEscapeQuotes;
         if (NumDimensions((expr ?? varValue).Type) > 1)
             _shouldEscapeQuotes = true;
-        var seqPrinter = ToListValue(token, f, expr ?? varValue, seqLengthExpr);
+        var seqPrinter = ToListValue(token, id, expr ?? varValue, seqLengthExpr);
         _shouldEscapeQuotes = prevShouldEscapeQuotes;
 
         if (NumDimensions((expr ?? varValue).Type) > 1 && !_shouldEscapeQuotes) {
@@ -84,9 +84,9 @@ public static class DaikonFormatConverter
         return seqPrinter;
     }
 
-    private static BlockStmt ToArrayValue(IOrigin token, Formal f, Expression? expr = null) {
-        var varValue = new NameSegment(f.Origin, f.Name, null);
-        AstUtils.ResolveNameSegment(varValue, f.Type, f, null);
+    private static BlockStmt ToArrayValue(IOrigin token, Identifier id, Expression? expr = null) {
+        var varValue = new NameSegment(id.Origin, id.Name, null);
+        AstUtils.ResolveNameSegment(varValue, id);
 
         var lengthMethod = new Name(token, "Length");
         var arrLengthExpr = new ExprDotName(token, varValue, lengthMethod, null) {
@@ -97,7 +97,7 @@ public static class DaikonFormatConverter
         var prevShouldEscapeQuotes = _shouldEscapeQuotes;
         if (NumDimensions((expr ?? varValue).Type) > 1)
             _shouldEscapeQuotes = true;
-        var arrayPrinter = ToListValue(token, f, expr ?? varValue, arrLengthExpr);
+        var arrayPrinter = ToListValue(token, id, expr ?? varValue, arrLengthExpr);
         _shouldEscapeQuotes = prevShouldEscapeQuotes;
 
         if (NumDimensions((expr ?? varValue).Type) > 1 && !_shouldEscapeQuotes) {
@@ -112,10 +112,10 @@ public static class DaikonFormatConverter
     }
 
     // applies to both Dafny sequences and arrays
-    private static BlockStmt ToListValue(IOrigin token, Formal f, Expression listExpr, Expression listLengthExpr) {
+    private static BlockStmt ToListValue(IOrigin token, Identifier id, Expression listExpr, Expression listLengthExpr) {
         var loopBoundVar = new BoundVar(token, $"{Convert.ToChar(105 + _outerLoopCount)}", Type.Int);
         var loopBound = new NameSegment(token, $"{Convert.ToChar(105 + _outerLoopCount)}", null);
-        AstUtils.ResolveNameSegment(loopBound, Type.Int, loopBoundVar, null);
+        AstUtils.ResolveNameSegment(loopBound, Identifier.ToIdentifier(loopBoundVar));
         
         var listIndexSelector = new SeqSelectExpr(token, true, listExpr, loopBound, null);
         if (listExpr.Type is SeqType seqType) {
@@ -125,7 +125,7 @@ public static class DaikonFormatConverter
         }
         var delimElement = AstUtils.CreateStringLiteral(token, " ");
         _outerLoopCount++;
-        var listIndexPrinter = ToDaikonValue(token, f, listIndexSelector, delimElement);
+        var listIndexPrinter = ToDaikonValue(token, id, listIndexSelector, delimElement);
         _outerLoopCount--;
         var loop = new ForLoopStmt(token, loopBoundVar,
             Expression.CreateIntLiteral(token, 0), listLengthExpr,
@@ -141,10 +141,10 @@ public static class DaikonFormatConverter
         return new BlockStmt(token, [printOpenArray, loop, printCloseArray]);
     }
     
-    private static BlockStmt ToMultiDimArrayValue(IOrigin token, Formal f, Expression? expr = null) {
-        var arrayDims = expr != null ? expr.Type.AsArrayType.Dims : f.Type.AsArrayType.Dims;
-        var varValue = new NameSegment(f.Origin, f.Name, null);
-        AstUtils.ResolveNameSegment(varValue, f.Type, f, null);
+    private static BlockStmt ToMultiDimArrayValue(IOrigin token, Identifier id, Expression? expr = null) {
+        var arrayDims = expr != null ? expr.Type.AsArrayType.Dims : id.Type.AsArrayType.Dims;
+        var varValue = new NameSegment(id.Origin, id.Name, null);
+        AstUtils.ResolveNameSegment(varValue, id);
 
         List<BoundVar> boundVars = [];
         List<Expression> bounds = [];
@@ -153,7 +153,7 @@ public static class DaikonFormatConverter
             var loopBoundVar = new BoundVar(token, $"{Convert.ToChar(105 + i + _outerLoopCount)}", Type.Int);
             boundVars.Add(loopBoundVar);
             var loopBound = new NameSegment(token, $"{Convert.ToChar(105 + i + _outerLoopCount)}", null);
-            AstUtils.ResolveNameSegment(loopBound, Type.Int, loopBoundVar, null);
+            AstUtils.ResolveNameSegment(loopBound, Identifier.ToIdentifier(loopBoundVar));
             bounds.Add(loopBound);
             var lengthMethod = new Name(token, "Length");
             var arrLengthExpr = new ExprDotName(token, expr ?? varValue, lengthMethod, null) {
@@ -165,13 +165,13 @@ public static class DaikonFormatConverter
         }
         
         var listIndexSelector = new MultiSelectExpr(token, expr ?? varValue, bounds) {
-            Type = expr != null ? ((UserDefinedType)expr.Type).TypeArgs[0] : ((UserDefinedType)f.Type).TypeArgs[0]
+            Type = expr != null ? ((UserDefinedType)expr.Type).TypeArgs[0] : ((UserDefinedType)id.Type).TypeArgs[0]
         };
         var delimElement = AstUtils.CreateStringLiteral(token, " ");
         _outerLoopCount += arrayDims;
         var prevShouldEscapeQuotes = _shouldEscapeQuotes;
         _shouldEscapeQuotes = true;
-        var listIndexPrinter = ToDaikonValue(token, f, listIndexSelector, delimElement);
+        var listIndexPrinter = ToDaikonValue(token, id, listIndexSelector, delimElement);
         _shouldEscapeQuotes = prevShouldEscapeQuotes;
         _outerLoopCount -= arrayDims;
         var openArrayElem = AstUtils.CreateStringLiteral(token, "[ ");
@@ -204,25 +204,25 @@ public static class DaikonFormatConverter
         return new BlockStmt(token, loopBody);
     }
 
-    private static BlockStmt ToSetValue(IOrigin token, Formal f, Expression? expr = null, Type? mapRange = null) {
-        var varValue = new NameSegment(f.Origin, f.Name, null);
-        AstUtils.ResolveNameSegment(varValue, f.Type, f, null);
+    private static BlockStmt ToSetValue(IOrigin token, Identifier id, Expression? expr = null, Type? mapRange = null) {
+        var varValue = new NameSegment(id.Origin, id.Name, null);
+        AstUtils.ResolveNameSegment(varValue, id);
         var setType = (expr ?? varValue).Type;
         var setArgType = setType switch {
             SetType type => type.Arg,
             MultiSetType mType => mType.Arg,
             _ => ((MapType)setType).Domain
         };
-        var setClone = Statement.CreateLocalVariable(token, $"{f.Name}{_outerLoopCount}'", expr ?? varValue);
-        var cloneVarValue = new NameSegment(f.Origin, $"{f.Name}{_outerLoopCount}'", null);
-        AstUtils.ResolveNameSegment(cloneVarValue, setType, setClone.Locals[0], null);
+        var setClone = Statement.CreateLocalVariable(token, $"{id.Name}{_outerLoopCount}'", expr ?? varValue);
+        var cloneVarValue = new NameSegment(id.Origin, $"{id.Name}{_outerLoopCount}'", null);
+        AstUtils.ResolveNameSegment(cloneVarValue, Identifier.ToIdentifier(setClone.Locals[0]), setType);
 
         var emptySet = CreateSetDisplay(token, setType, []);
         var loopGuard = AstUtils.CreateNeq(cloneVarValue, emptySet, setType);
         // var e :| e in my_set';
-        var setElemSelector = Statement.CreateLocalVariable(token, $"{f.Name}{_outerLoopCount}_elem", setArgType);
-        var setElemVarValue = new NameSegment(token, $"{f.Name}{_outerLoopCount}_elem", null);
-        AstUtils.ResolveNameSegment(setElemVarValue, setArgType, setElemSelector.Locals[0], null);
+        var setElemSelector = Statement.CreateLocalVariable(token, $"{id.Name}{_outerLoopCount}_elem", setArgType);
+        var setElemVarValue = new NameSegment(token, $"{id.Name}{_outerLoopCount}_elem", null);
+        AstUtils.ResolveNameSegment(setElemVarValue, Identifier.ToIdentifier(setElemSelector.Locals[0]), setArgType);
         var setElemSelectorExpr = AstUtils.CreateIn(setElemVarValue, cloneVarValue, setType);
         setElemSelector.Assign = new AssignSuchThatStmt(token, [setElemVarValue], setElemSelectorExpr, null, null);
         AstUtils.ResolveAssignSuchThatStatement((AssignSuchThatStmt)setElemSelector.Assign);
@@ -232,9 +232,9 @@ public static class DaikonFormatConverter
         var prevShouldEscapeQuotes = _shouldEscapeQuotes;
         if (NumDimensions((expr ?? varValue).Type) > 1)
             _shouldEscapeQuotes = true;
-        var setElemPrinter = ToDaikonValue(token, f, setElemVarValue, delimElement);
+        var setElemPrinter = ToDaikonValue(token, id, setElemVarValue, delimElement);
         if (mapRange != null && expr != null)
-            setElemPrinter = ToMapElementValue(token, f, ((ExprDotName)expr).Lhs, setElemVarValue, mapRange, setElemPrinter);
+            setElemPrinter = ToMapElementValue(token, id, ((ExprDotName)expr).Lhs, setElemVarValue, mapRange, setElemPrinter);
         _shouldEscapeQuotes = prevShouldEscapeQuotes;
         _outerLoopCount--;
         // sett' := sett' - { e };
@@ -271,9 +271,9 @@ public static class DaikonFormatConverter
         return new BlockStmt(token, blockBody);
     }
 
-    private static BlockStmt ToMapValue(IOrigin token, Formal f, Expression? expr = null) {
-        var varValue = new NameSegment(f.Origin, f.Name, null);
-        AstUtils.ResolveNameSegment(varValue, f.Type, f, null);
+    private static BlockStmt ToMapValue(IOrigin token, Identifier id, Expression? expr = null) {
+        var varValue = new NameSegment(id.Origin, id.Name, null);
+        AstUtils.ResolveNameSegment(varValue, id);
 
         var mapDomainType = ((MapType)(expr ?? varValue).Type).Arg;
         var keysMethod = new Name(token, "Keys");
@@ -287,7 +287,7 @@ public static class DaikonFormatConverter
             mapKeysExpr.ResolvedExpression.Type = new SetType(true, mapDomainType);
         var prevShouldEscapeQuotes = _shouldEscapeQuotes;
         _shouldEscapeQuotes = true;
-        var mapPrinter = ToSetValue(token, f, mapKeysExpr, (expr ?? varValue).Type.AsMapType.Range);
+        var mapPrinter = ToSetValue(token, id, mapKeysExpr, (expr ?? varValue).Type.AsMapType.Range);
         _shouldEscapeQuotes = prevShouldEscapeQuotes;
         
         var stringDelimElem = AstUtils.CreateStringLiteral(token, "\\\"");
@@ -299,7 +299,7 @@ public static class DaikonFormatConverter
         return mapPrinter;
     }
 
-    private static BlockStmt ToMapElementValue(IOrigin token, Formal f, Expression mapVarValue, Expression mapKeyVarValue, Type mapKeysType, Statement? mapKeyPrinter) {
+    private static BlockStmt ToMapElementValue(IOrigin token, Identifier id, Expression mapVarValue, Expression mapKeyVarValue, Type mapKeysType, Statement? mapKeyPrinter) {
         var openArrayElem = AstUtils.CreateStringLiteral(token, "[ ");
         var printOpenArray = new PrintStmt(token, [openArrayElem]);
         var closeArrayElem = AstUtils.CreateStringLiteral(token, "] ");
@@ -309,7 +309,7 @@ public static class DaikonFormatConverter
         var mapValueSelector = new SeqSelectExpr(token, true, mapVarValue, mapKeyVarValue, null) {
             Type = mapKeysType
         };
-        var mapValuePrinter = ToDaikonValue(token, f, mapValueSelector, delimElement);
+        var mapValuePrinter = ToDaikonValue(token, id, mapValueSelector, delimElement);
 
         List<Statement> blockBody = [printOpenArray];
         if (mapKeyPrinter != null) blockBody.Add(mapKeyPrinter);
