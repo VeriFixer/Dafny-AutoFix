@@ -156,8 +156,9 @@ public class DaikonInstrumenter(List<Identifier> identifierAvailability) : Visit
     }
 
     private void AddMethodDeclaration(Method method) {
+        var faultyMethod = SnapshotGenerator.FaultyMethod;
         var mainMethod = SnapshotGenerator.MainMethod;
-        if (mainMethod == null) return;
+        if (faultyMethod == null || mainMethod == null) return;
 
         List<string> pointTypes = ["ENTER", "EXIT00"];
         if (method.Name == SnapshotGenerator.FaultyMethod?.Name) {
@@ -173,12 +174,10 @@ public class DaikonInstrumenter(List<Identifier> identifierAvailability) : Visit
             declarationElement = AstUtils.CreateStringLiteral(mainMethod.Origin, programPointType);
             _newStmts.Add(new PrintStmt(mainMethod.Origin, [declarationElement]));
 
-
-            foreach (var input in method.Ins.Where(i => !i.IsGhost))
-                AddVariableDeclaration(input, mainMethod.Origin);
-            if (type.StartsWith("EXIT")) {
-                foreach (var output in method.Outs.Where(o => !o.IsGhost))
-                    AddVariableDeclaration(output, mainMethod.Origin);
+            if (method == faultyMethod) {
+                AddFaultyMethodVariableDeclarations(method, type);
+            } else {
+                AddDummyMethodVariableDeclarations(method, type.StartsWith("EXIT"));
             }
             
             var delimElement = AstUtils.CreateStringLiteral(method.Origin, "\\n");
@@ -186,21 +185,50 @@ public class DaikonInstrumenter(List<Identifier> identifierAvailability) : Visit
         }
     }
 
-    private void AddVariableDeclaration(Formal f, IOrigin token) {
-        var decType = f.Type.ToString().Replace(" ", "");
-        var repType = DaikonFormatConverter.ToType(f.Type);
-        var comparability = DaikonFormatConverter.GetComparability(f.Type);
+    private void AddFaultyMethodVariableDeclarations(Method method, string pointType) {
+        var locationStartIndex = pointType.IndexOf("EXIT", StringComparison.Ordinal) + 7;
+        var returnIdx = locationStartIndex < pointType.Length && 
+            int.TryParse(pointType[locationStartIndex..], out var intVal) ? 
+            intVal - 1 : _returnStmts.Count - 1;
+        var position = pointType.EndsWith("ENTER") ? method.Body?.StartToken.pos : 
+            pointType.EndsWith("EXIT") || pointType.EndsWith("EXIT00") ?
+            method.Body?.EndToken.pos : _returnStmts[returnIdx].Item1.StartToken.pos;
+        
+        var availableIdentifiers = identifierAvailability.Where(
+            id => 
+                (position > id.AvailabilityStartPos && position <= id.AvailabilityEndPos) || 
+                (id.AvailabilityStartPos == null && id.AvailabilityEndPos == null)
+        ).ToList();
+        foreach (var identifier in availableIdentifiers)
+            AddVariableDeclaration(identifier.Name, identifier.Type, method.Origin);
+    }
+
+    private void AddDummyMethodVariableDeclarations(Method method, bool isExit) {
+        var mainMethod = SnapshotGenerator.MainMethod;
+        if (mainMethod == null) return;
+        
+        foreach (var input in method.Ins.Where(i => !i.IsGhost))
+            AddVariableDeclaration(input.DisplayName, input.Type, mainMethod.Origin);
+        if (!isExit) return;
+        foreach (var output in method.Outs.Where(o => !o.IsGhost))
+            AddVariableDeclaration(output.DisplayName, output.Type, mainMethod.Origin);
+    }
+
+    private void AddVariableDeclaration(string name, Type t, IOrigin token) {
+        var decType = t.ToString().Replace(" ", "");
+        var repType = DaikonFormatConverter.ToType(t);
+        var comparability = DaikonFormatConverter.GetComparability(t);
         if (repType == "" || comparability == "") return;
 
         // arrays require two variable declarations: the array object itself and its contents
-        if (DaikonFormatConverter.IsArrayType(f.Type)) { // array object declaration
-            AddVariableDeclaration(token, f.DisplayName, decType,
+        if (DaikonFormatConverter.IsArrayType(t)) { // array object declaration
+            AddVariableDeclaration(token, name, decType,
                 "hashcode", "9", false);
         }
         // array contents and other variable types declaration
-        AddVariableDeclaration(token, f.DisplayName, 
-            decType, repType, comparability, 
-            DaikonFormatConverter.IsArrayType(f.Type)
+        AddVariableDeclaration(
+            token, name, decType, repType, comparability, 
+            DaikonFormatConverter.IsArrayType(t)
         );
     }
 
@@ -254,35 +282,67 @@ public class DaikonInstrumenter(List<Identifier> identifierAvailability) : Visit
         var programPoint = $"{method.FullSanitizedName}():::{ppt}\\n";
         var declarationElement = AstUtils.CreateStringLiteral(method.Origin, programPoint);
         newStmts.Add(new PrintStmt(method.Origin, [declarationElement]));
-        
-        foreach (var input in method.Ins.Where(i => !i.IsGhost))
-            newStmts.AddRange(AddVariableTracePoint(method, input));
-        if (ppt.StartsWith("EXIT")) {
-            foreach (var output in method.Outs.Where(o => !o.IsGhost))
-                newStmts.AddRange(AddVariableTracePoint(method, output));
-        }
-        
+
+        newStmts.AddRange(method == SnapshotGenerator.FaultyMethod
+            ? AddFaultyMethodVariableTracePoints(method, ppt)
+            : AddDummyMethodVariableTracePoints(method, ppt.StartsWith("EXIT")));
+
         var delimElement = AstUtils.CreateStringLiteral(method.Origin, "\\n");
         newStmts.Add(new PrintStmt(method.Origin, [delimElement]));
         return newStmts;
     }
 
-    private List<Statement> AddVariableTracePoint(Method method, Formal f) {
-        var daikonValue = DaikonFormatConverter.ToDaikonValue(method.Origin, Identifier.ToIdentifier(f));
+    private List<Statement> AddFaultyMethodVariableTracePoints(Method method, string pointType) {
+        List<Statement> newStmts = [];
+        var locationStartIndex = pointType.IndexOf("EXIT", StringComparison.Ordinal) + 7;
+        var returnIdx = locationStartIndex < pointType.Length && 
+            int.TryParse(pointType[locationStartIndex..], out var intVal) ? 
+            intVal - 1 : _returnStmts.Count - 1;
+        var position = pointType.EndsWith("ENTER") ? method.Body?.StartToken.pos : 
+            pointType.EndsWith("EXIT") || pointType.EndsWith("EXIT00") ?
+                method.Body?.EndToken.pos : _returnStmts[returnIdx].Item1.StartToken.pos;
+        
+        var availableIdentifiers = identifierAvailability.Where(
+            id => 
+                (position > id.AvailabilityStartPos && position <= id.AvailabilityEndPos) || 
+                (id.AvailabilityStartPos == null && id.AvailabilityEndPos == null)
+        ).ToList();
+        foreach (var identifier in availableIdentifiers) {
+            newStmts.AddRange(AddVariableTracePoint(method, identifier));
+        }
+        return newStmts;
+    }
+
+    private List<Statement> AddDummyMethodVariableTracePoints(Method method, bool isExit) {
+        List<Statement> newStmts = [];
+        foreach (var input in method.Ins.Where(i => !i.IsGhost)) {
+            var identifier = new Identifier(input, null, input.Type, null, null);
+            newStmts.AddRange(AddVariableTracePoint(method, identifier));
+        }
+        if (!isExit) return newStmts;
+        foreach (var output in method.Outs.Where(o => !o.IsGhost)) {
+            var identifier = new Identifier(output, null, output.Type, null, null);
+            newStmts.AddRange(AddVariableTracePoint(method, identifier));
+        }
+        return newStmts;
+    }
+
+    private List<Statement> AddVariableTracePoint(Method method, Identifier id) {
+        var daikonValue = DaikonFormatConverter.ToDaikonValue(method.Origin, id);
         if (daikonValue == null)
             return [];
         
         List<Statement> newStmts = [];
-        if (DaikonFormatConverter.IsArrayType(f.Type)) {
+        if (DaikonFormatConverter.IsArrayType(id.Type)) {
             // random hashcode since, for now, we are not interested in invariants related to this
             var hashcodeElem = AstUtils.CreateStringLiteral(method.Origin, "416153648\\n");
             var hashCodePrinter = new PrintStmt(method.Origin, [hashcodeElem]);
             newStmts.AddRange(AddVariableTracePoint(
-                method.Origin, f.DisplayName, hashCodePrinter, false
+                method.Origin, id.Name, hashCodePrinter, false
             ));
         }
-        newStmts.AddRange(AddVariableTracePoint(method.Origin, f.DisplayName, 
-            daikonValue, DaikonFormatConverter.IsArrayType(f.Type)));
+        newStmts.AddRange(AddVariableTracePoint(method.Origin, id.Name, 
+            daikonValue, DaikonFormatConverter.IsArrayType(id.Type)));
         return newStmts;
     }
 
