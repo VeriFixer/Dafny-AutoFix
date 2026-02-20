@@ -3,20 +3,22 @@ using Type = Microsoft.Dafny.Type;
 
 namespace SnapshotGenerator.InvariantInference;
 
-public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int?, int?)> identifierAvailability) : Visitor(true)
+public class DaikonInstrumenter(List<Identifier> identifierAvailability) : Visitor(true)
 {
     private TopLevelDeclWithMembers? _currentTopLevelDecl;
+    private BlockStmt? _currentBlock;
     private readonly List<Method> _newMethods = [];
     private List<Statement> _newBlockBody = [];
     private readonly List<Statement> _newStmts = [];
+    private readonly List<(ReturnStmt, BlockStmt)> _returnStmts = []; // (return stmt, enclosing block)
     
     public void Instrument(ModuleDefinition module) {
         Visit(module);
-        if (InvariantInferrer.MainMethod == null || 
-            InvariantInferrer.FaultyMethod == null)
+        if (SnapshotGenerator.MainMethod == null || 
+            SnapshotGenerator.FaultyMethod == null)
             return;
-        var mainMethod = InvariantInferrer.MainMethod;
-        var faultyMethod = InvariantInferrer.FaultyMethod;
+        var mainMethod = SnapshotGenerator.MainMethod;
+        var faultyMethod = SnapshotGenerator.FaultyMethod;
         AdjustTestExecution(mainMethod);
         
         AddHeader();
@@ -40,14 +42,14 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
     protected override void HandleMethod(Method method) {
         // find Main, i.e., entrypoint, where the faulty method is being exercised
         if (method.Name == "Main")
-            InvariantInferrer.MainMethod = method;
+            SnapshotGenerator.MainMethod = method;
         // find the faulty method, i.e., where the violation occurs  
         if (!(method.StartToken.line <= SnapshotGenerator.ViolationLine &&
               method.EndToken.line >= SnapshotGenerator.ViolationLine))
             return;
-        InvariantInferrer.FaultyMethod = method;
+        SnapshotGenerator.FaultyMethod = method;
         
-        // instrument the method with calls to dummy methods for invariant inferrence
+        // instrument the method with calls to dummy methods for invariant inference
         if (method.Body != null)
             HandleBlock(method.Body);
     }
@@ -56,24 +58,39 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
     /// Instrumentation
     /// -------------------------
     protected override void HandleBlock(BlockStmt blockStmt) {
+        var faultyMethod = SnapshotGenerator.FaultyMethod;
+        
+        _currentBlock = blockStmt;
         var prevNewBlock = _newBlockBody;
         _newBlockBody = [];
+        
+        if (blockStmt != faultyMethod?.Body)
+            InstrumentLine(blockStmt.StartToken);
         foreach (var (stmt, i) in blockStmt.Body.Select((stmt, i) => (stmt, i))) {
             _newBlockBody.Add(stmt);
             HandleStatement(stmt);
-            if (i != blockStmt.Body.Count - 1)
-                InstrumentLine(stmt.EndToken);
+            _currentBlock = blockStmt;
+            if (stmt is ReturnStmt || (i == blockStmt.Body.Count - 1 && blockStmt == faultyMethod?.Body))
+                continue;
+            InstrumentLine(stmt.EndToken);
         }
+        
         blockStmt.Body = _newBlockBody;
         _newBlockBody = prevNewBlock;
+    }
+    
+    protected override void VisitStatement(ProduceStmt pStmt) {
+        if (pStmt is ReturnStmt rStmt && _currentBlock != null)
+            _returnStmts.Add((rStmt, _currentBlock));
+        base.VisitStatement(pStmt);
     }
 
     private void InstrumentLine(IOrigin token) {
         if (_currentTopLevelDecl == null) return;
         var availableIdentifiers = identifierAvailability.Where(
-            expr => 
-                (token.pos > expr.Item5 && token.pos < expr.Item6) || 
-                (expr.Item5 == null && expr.Item6 == null)
+            id => 
+                (token.pos > id.AvailabilityStartPos && token.pos < id.AvailabilityEndPos) || 
+                (id.AvailabilityStartPos == null && id.AvailabilityEndPos == null)
         ).ToList();
         var newMethod = GenerateDummyMethod(token.pos, availableIdentifiers);
         if (newMethod == null) return;
@@ -81,8 +98,8 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
         List<ActualBinding> arguments = [];
         List<Expression> callArgs = [];
         foreach (var identifier in availableIdentifiers) {
-            var argumentName = new NameSegment(token, identifier.Item3, null);
-            AstUtils.ResolveNameSegment(argumentName, identifier.Item4, identifier.Item1, identifier.Item2, _currentTopLevelDecl);
+            var argumentName = new NameSegment(token, identifier.Name, null);
+            AstUtils.ResolveNameSegment(argumentName, identifier);
             callArgs.Add(argumentName);
             arguments.Add(new ActualBinding(null, argumentName));
         }
@@ -93,7 +110,7 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
         _newBlockBody.Add(newStmt);
     }
 
-    private Method? GenerateDummyMethod(int dummyMethodID, List<(IVariable?, MemberDecl?, string, Type, int?, int?)> availableIdentifiers) {
+    private Method? GenerateDummyMethod(int dummyMethodID, List<Identifier> availableIdentifiers) {
         if (_currentTopLevelDecl == null) return null;
         var token = _currentTopLevelDecl.EndToken.MakeAutoGenerated();
         if (token == null) return null;
@@ -102,7 +119,7 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
         List<Formal> inputs = [];
         foreach (var identifier in availableIdentifiers) {
             inputs.Add(new Formal(
-                token, identifier.Item3, identifier.Item4, true, false, null
+                token, identifier.Name, identifier.Type, true, false, null
             ));
         }
 
@@ -134,7 +151,7 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
     /// Daikon
     /// -------------------------
     private void AddHeader() {
-        var method = InvariantInferrer.FaultyMethod;
+        var method = SnapshotGenerator.FaultyMethod;
         if (method == null) return;
         
         var headerElement = AstUtils.CreateStringLiteral(method.Origin, "decl-version 2.0\\n");
@@ -146,10 +163,17 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
     }
 
     private void AddMethodDeclaration(Method method) {
-        var mainMethod = InvariantInferrer.MainMethod;
-        if (mainMethod == null) return;
+        var faultyMethod = SnapshotGenerator.FaultyMethod;
+        var mainMethod = SnapshotGenerator.MainMethod;
+        if (faultyMethod == null || mainMethod == null) return;
+
+        List<string> pointTypes = ["ENTER", "EXIT00"];
+        if (method.Name == SnapshotGenerator.FaultyMethod?.Name) {
+            for (var i = 0; i < _returnStmts.Count; i++)
+                pointTypes.Add($"EXIT{i + 1}");
+        }
         
-        foreach (var type in new List<string> { "ENTER", "EXIT00" }) {
+        foreach (var type in pointTypes) {
             var programPointDecl = $"ppt {method.FullSanitizedName}():::{type}\\n";
             var declarationElement = AstUtils.CreateStringLiteral(mainMethod.Origin, programPointDecl);
             _newStmts.Add(new PrintStmt(mainMethod.Origin, [declarationElement]));
@@ -157,12 +181,10 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
             declarationElement = AstUtils.CreateStringLiteral(mainMethod.Origin, programPointType);
             _newStmts.Add(new PrintStmt(mainMethod.Origin, [declarationElement]));
 
-
-            foreach (var input in method.Ins)
-                AddVariableDeclaration(input, mainMethod.Origin);
-            if (type == "EXIT00") {
-                foreach (var output in method.Outs)
-                    AddVariableDeclaration(output, mainMethod.Origin);
+            if (method == faultyMethod) {
+                AddFaultyMethodVariableDeclarations(method, type);
+            } else {
+                AddDummyMethodVariableDeclarations(method, type.StartsWith("EXIT"));
             }
             
             var delimElement = AstUtils.CreateStringLiteral(method.Origin, "\\n");
@@ -170,21 +192,50 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
         }
     }
 
-    private void AddVariableDeclaration(Formal f, IOrigin token) {
-        var decType = f.Type.ToString().Replace(" ", "");
-        var repType = DaikonFormatConverter.ToType(f.Type);
-        var comparability = DaikonFormatConverter.GetComparability(f.Type);
+    private void AddFaultyMethodVariableDeclarations(Method method, string pointType) {
+        var locationStartIndex = pointType.IndexOf("EXIT", StringComparison.Ordinal) + 7;
+        var returnIdx = locationStartIndex < pointType.Length && 
+            int.TryParse(pointType[locationStartIndex..], out var intVal) ? 
+            intVal - 1 : _returnStmts.Count - 1;
+        var position = pointType.EndsWith("ENTER") ? method.Body?.StartToken.pos : 
+            pointType.EndsWith("EXIT") || pointType.EndsWith("EXIT00") ?
+            method.Body?.EndToken.pos : _returnStmts[returnIdx].Item1.StartToken.pos;
+        
+        var availableIdentifiers = identifierAvailability.Where(
+            id => 
+                (position > id.AvailabilityStartPos && position <= id.AvailabilityEndPos) || 
+                (id.AvailabilityStartPos == null && id.AvailabilityEndPos == null)
+        ).ToList();
+        foreach (var identifier in availableIdentifiers)
+            AddVariableDeclaration(identifier.Name, identifier.Type, method.Origin);
+    }
+
+    private void AddDummyMethodVariableDeclarations(Method method, bool isExit) {
+        var mainMethod = SnapshotGenerator.MainMethod;
+        if (mainMethod == null) return;
+        
+        foreach (var input in method.Ins.Where(i => !i.IsGhost))
+            AddVariableDeclaration(input.DisplayName, input.Type, mainMethod.Origin);
+        if (!isExit) return;
+        foreach (var output in method.Outs.Where(o => !o.IsGhost))
+            AddVariableDeclaration(output.DisplayName, output.Type, mainMethod.Origin);
+    }
+
+    private void AddVariableDeclaration(string name, Type t, IOrigin token) {
+        var decType = t.ToString().Replace(" ", "");
+        var repType = DaikonFormatConverter.ToType(t);
+        var comparability = DaikonFormatConverter.GetComparability(t);
         if (repType == "" || comparability == "") return;
 
         // arrays require two variable declarations: the array object itself and its contents
-        if (DaikonFormatConverter.IsArrayType(f.Type)) { // array object declaration
-            AddVariableDeclaration(token, f.DisplayName, decType,
+        if (DaikonFormatConverter.IsArrayType(t)) { // array object declaration
+            AddVariableDeclaration(token, name, decType,
                 "hashcode", "9", false);
         }
         // array contents and other variable types declaration
-        AddVariableDeclaration(token, f.DisplayName, 
-            decType, repType, comparability, 
-            DaikonFormatConverter.IsArrayType(f.Type)
+        AddVariableDeclaration(
+            token, name, decType, repType, comparability, 
+            DaikonFormatConverter.IsArrayType(t)
         );
     }
 
@@ -215,52 +266,90 @@ public class DaikonInstrumenter(List<(IVariable?, MemberDecl?, string, Type, int
 
     private void AddMethodTracePoints(Method method) {
         // Add points at the method's entrance
-        var newStmts = AddMethodTracePoints(method, true);
+        var newStmts = AddMethodTracePoints(method, "ENTER");
         if (method.Body == null) {
             method.Body = new BlockStmt(method.Origin, newStmts);
         } else {
             method.Body.Body = newStmts.Concat(method.Body.Body).ToList();
         }
-        // Add points at the method's exit
-        newStmts = AddMethodTracePoints(method, false);
+        // Add points at the method's exit(s)
+        if (method.Name == SnapshotGenerator.FaultyMethod?.Name) {
+            foreach (var ((rStmt, block), i) in _returnStmts.Select((e, i) => (e, i))) {
+                newStmts = AddMethodTracePoints(method, $"EXIT{i + 1}");
+                var idx = block.Body.IndexOf(rStmt);
+                block.Body.InsertRange(idx, newStmts);
+            }
+        }
+        newStmts = AddMethodTracePoints(method, "EXIT00");
         method.Body.Body.AddRange(newStmts);
     }
     
-    private List<Statement> AddMethodTracePoints(Method method, bool isEntrance) {
+    private List<Statement> AddMethodTracePoints(Method method, string ppt) {
         List<Statement> newStmts = [];
-        var type = isEntrance ? "ENTER" : "EXIT00";
-        var programPoint = $"{method.FullSanitizedName}():::{type}\\n";
+        var programPoint = $"{method.FullSanitizedName}():::{ppt}\\n";
         var declarationElement = AstUtils.CreateStringLiteral(method.Origin, programPoint);
         newStmts.Add(new PrintStmt(method.Origin, [declarationElement]));
-        
-        foreach (var input in method.Ins)
-            newStmts.AddRange(AddVariableTracePoint(method, input));
-        if (!isEntrance) {
-            foreach (var output in method.Outs)
-                newStmts.AddRange(AddVariableTracePoint(method, output));
-        }
-        
+
+        newStmts.AddRange(method == SnapshotGenerator.FaultyMethod
+            ? AddFaultyMethodVariableTracePoints(method, ppt)
+            : AddDummyMethodVariableTracePoints(method, ppt.StartsWith("EXIT")));
+
         var delimElement = AstUtils.CreateStringLiteral(method.Origin, "\\n");
         newStmts.Add(new PrintStmt(method.Origin, [delimElement]));
         return newStmts;
     }
 
-    private List<Statement> AddVariableTracePoint(Method method, Formal f) {
-        var daikonValue = DaikonFormatConverter.ToDaikonValue(method.Origin, f);
+    private List<Statement> AddFaultyMethodVariableTracePoints(Method method, string pointType) {
+        List<Statement> newStmts = [];
+        var locationStartIndex = pointType.IndexOf("EXIT", StringComparison.Ordinal) + 7;
+        var returnIdx = locationStartIndex < pointType.Length && 
+            int.TryParse(pointType[locationStartIndex..], out var intVal) ? 
+            intVal - 1 : _returnStmts.Count - 1;
+        var position = pointType.EndsWith("ENTER") ? method.Body?.StartToken.pos : 
+            pointType.EndsWith("EXIT") || pointType.EndsWith("EXIT00") ?
+                method.Body?.EndToken.pos : _returnStmts[returnIdx].Item1.StartToken.pos;
+        
+        var availableIdentifiers = identifierAvailability.Where(
+            id => 
+                (position > id.AvailabilityStartPos && position <= id.AvailabilityEndPos) || 
+                (id.AvailabilityStartPos == null && id.AvailabilityEndPos == null)
+        ).ToList();
+        foreach (var identifier in availableIdentifiers) {
+            newStmts.AddRange(AddVariableTracePoint(method, identifier));
+        }
+        return newStmts;
+    }
+
+    private List<Statement> AddDummyMethodVariableTracePoints(Method method, bool isExit) {
+        List<Statement> newStmts = [];
+        foreach (var input in method.Ins.Where(i => !i.IsGhost)) {
+            var identifier = new Identifier(input, null, input.Type, null, null);
+            newStmts.AddRange(AddVariableTracePoint(method, identifier));
+        }
+        if (!isExit) return newStmts;
+        foreach (var output in method.Outs.Where(o => !o.IsGhost)) {
+            var identifier = new Identifier(output, null, output.Type, null, null);
+            newStmts.AddRange(AddVariableTracePoint(method, identifier));
+        }
+        return newStmts;
+    }
+
+    private List<Statement> AddVariableTracePoint(Method method, Identifier id) {
+        var daikonValue = DaikonFormatConverter.ToDaikonValue(method.Origin, id);
         if (daikonValue == null)
             return [];
         
         List<Statement> newStmts = [];
-        if (DaikonFormatConverter.IsArrayType(f.Type)) {
+        if (DaikonFormatConverter.IsArrayType(id.Type)) {
             // random hashcode since, for now, we are not interested in invariants related to this
             var hashcodeElem = AstUtils.CreateStringLiteral(method.Origin, "416153648\\n");
             var hashCodePrinter = new PrintStmt(method.Origin, [hashcodeElem]);
             newStmts.AddRange(AddVariableTracePoint(
-                method.Origin, f.DisplayName, hashCodePrinter, false
+                method.Origin, id.Name, hashCodePrinter, false
             ));
         }
-        newStmts.AddRange(AddVariableTracePoint(method.Origin, f.DisplayName, 
-            daikonValue, DaikonFormatConverter.IsArrayType(f.Type)));
+        newStmts.AddRange(AddVariableTracePoint(method.Origin, id.Name, 
+            daikonValue, DaikonFormatConverter.IsArrayType(id.Type)));
         return newStmts;
     }
 

@@ -5,9 +5,14 @@ namespace SnapshotGenerator.Enumeration;
 
 public class ExpressionScanner() : IdentifierAvailabilityScanner(true)
 {
+    public static readonly List<Expression> SeqSelectExprs = [];
+    public static readonly List<Expression> MapSelectExprs = [];
     private readonly List<Expression> _integerExprs = [];
     private readonly List<(string, Type, string)> _allArgumentlessPreds = []; // (scope, return type, predicate name)
+    private List<string> _varsToAvoid = [];
     private string _currentTopLevelDecl = "";
+    private bool _avoidCurrentlyVisitingExpr;
+    private string? _parentExpr;
     
     /// -------------------------
     /// General AST node visitors
@@ -27,19 +32,30 @@ public class ExpressionScanner() : IdentifierAvailabilityScanner(true)
     protected override void HandleMemberDecls(TopLevelDeclWithMembers decl) {  
         _currentTopLevelDecl = decl.Name;
         base.HandleMemberDecls(decl);
+        
+        if (SnapshotGenerator.FaultyMethod == null ||
+            SnapshotGenerator.PassingTestsMethod == null ||
+            SnapshotGenerator.FailingTestsMethod == null) 
+            return;
+        AstUtils.PrintTestCases(SnapshotGenerator.PassingTestsMethod);
+        AstUtils.PrintTestCases(SnapshotGenerator.FailingTestsMethod);
     }
     
     protected override void HandleMethod(Method method) {
         // distinguish passing from failing test execution
-        if (_currentTopLevelDecl == "_default" && method.Name == "Passing")
+        if (_currentTopLevelDecl == "_default" && method.Name == "Passing") {
+            SnapshotGenerator.PassingTestsMethod = method;
             AstUtils.PrintTestType(method, true);
-        if (_currentTopLevelDecl == "_default" && method.Name == "Failing")
+        }
+        if (_currentTopLevelDecl == "_default" && method.Name == "Failing") {
+            SnapshotGenerator.FailingTestsMethod = method;
             AstUtils.PrintTestType(method, false);
+        }
         
         // find the faulty method, i.e., where the violation occurs  
         if (method.StartToken.line <= SnapshotGenerator.ViolationLine &&
             method.EndToken.line >= SnapshotGenerator.ViolationLine)
-            Enumerator.FaultyMethod = method;
+            SnapshotGenerator.FaultyMethod = method;
         base.HandleMethod(method);
     }
     
@@ -61,7 +77,7 @@ public class ExpressionScanner() : IdentifierAvailabilityScanner(true)
     /// Faulty method visit
     /// -------------------------
     public void VisitFaultyMethod() {
-        var faultyMethod = Enumerator.FaultyMethod;
+        var faultyMethod = SnapshotGenerator.FaultyMethod;
         if (faultyMethod == null)
             return;
         
@@ -71,15 +87,55 @@ public class ExpressionScanner() : IdentifierAvailabilityScanner(true)
     }
 
     protected override void HandleExpression(Expression expr) {
-        CollectExpressions(expr);
-        CollectArgumentlessCalls(expr);
+        var prevParentExpr = _parentExpr;
+        var prevAvoidCurrentlyVisitingExpr = _avoidCurrentlyVisitingExpr;
+        _parentExpr = expr.ToString();
+        if (_avoidCurrentlyVisitingExpr || 
+            _varsToAvoid.Contains(expr.ToString()) ||
+            expr.SubExpressions
+                .Select(e => e.ToString())
+                .Any(e => _varsToAvoid.Contains(e)))
+        {
+            _avoidCurrentlyVisitingExpr = true;
+            return; 
+        }
         base.HandleExpression(expr);
+        if (!_avoidCurrentlyVisitingExpr) {
+            CollectExpressions(expr);
+            CollectArgumentlessCalls(expr);     
+        }
+        _parentExpr = prevParentExpr;
+        if (_parentExpr == null)
+            _avoidCurrentlyVisitingExpr = prevAvoidCurrentlyVisitingExpr;
     }
     
     protected override void VisitExpression(BinaryExpr bExpr) {
-        if (bExpr.Op == BinaryExpr.Opcode.Imp)
-            CollectImpliesMutations(bExpr);
         base.VisitExpression(bExpr);
+        if (bExpr.Op == BinaryExpr.Opcode.Imp && !_avoidCurrentlyVisitingExpr)
+            CollectImpliesMutations(bExpr);
+    }
+    
+    protected override void VisitExpression(SeqSelectExpr seqSExpr) {
+        if (seqSExpr.Seq.Type is SeqType || seqSExpr.Seq.Type.ToString().StartsWith("array") && 
+            SeqSelectExprs.All(e => e.ToString() != seqSExpr.ToString()))
+            SeqSelectExprs.Add(seqSExpr);
+        if (seqSExpr.Seq.Type is MapType && MapSelectExprs.All(e => e.ToString() != seqSExpr.ToString()))
+            MapSelectExprs.Add(seqSExpr);
+        base.VisitExpression(seqSExpr);
+    }
+    
+    protected override void VisitStatement(ForallStmt forStmt) {
+        foreach (var boundVar in forStmt.BoundVars) {
+            _varsToAvoid.Add(boundVar.Name);
+        }
+        base.VisitStatement(forStmt);
+    }
+    
+    protected override void VisitExpression(ComprehensionExpr compExpr) {
+        foreach (var boundVar in compExpr.BoundVars) {
+            _varsToAvoid.Add(boundVar.Name);
+        }
+        base.VisitExpression(compExpr);
     }
 
     /// -------------------------

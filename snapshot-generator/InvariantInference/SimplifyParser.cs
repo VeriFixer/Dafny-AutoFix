@@ -16,6 +16,7 @@ public class SimplifyExpression
 
     private static readonly List<(Expression, Type?)> AllGeneratedExprsTypes = [];
     private static List<Expression> _exprsNeedingNonZeroCheck = [];
+    private static List<Expression> _exprsNeedingIndexInBoundsCheck = [];
     private static bool _isTopLevelExpr = true;
     private static bool _replaceArraySelectionWithMembership;
     private static Type? _sibblingNodeType;
@@ -85,11 +86,22 @@ public class SimplifyExpression
                 .Select(GetExpressionType)
                 .FirstOrDefault(type => type != null);
         }
+        
+        var nullArgIdx = _args.FindIndex(arg => arg._t.Type == SimplifyToken.SimplifyTokenType.Null);
+        if (nullArgIdx != -1) {
+            _sibblingNodeType = _args.Where((_, i) => i != strArgIdx)
+                .Select(arg => arg.ToExpression())
+                .SelectMany(exprList => exprList)
+                .Select(GetExpressionType)
+                .FirstOrDefault(type => type != null);
+            if (_sibblingNodeType == null || !_sibblingNodeType.ToString().Contains("?"))
+                return [null];
+        }
+        
         var argExprs = _args.Select(arg => arg.ToExpression()).SelectMany(exprList => exprList).ToList();
         _isTopLevelExpr = prevIsTopLevelExpr;
         if (argExprs.Contains(null))
             return [null];
-        
         var expr = _t.Type switch {
             SimplifyToken.SimplifyTokenType.Add => [ToBinaryExpression(BinaryExpr.Opcode.Add, argExprs)],
             SimplifyToken.SimplifyTokenType.Sub => [ToBinaryExpression(BinaryExpr.Opcode.Sub, argExprs)],
@@ -126,6 +138,10 @@ public class SimplifyExpression
             expr = [AddNonZeroCheck(expr[0], _exprsNeedingNonZeroCheck)];
             _exprsNeedingNonZeroCheck = [];
         }
+        if (_isTopLevelExpr && _exprsNeedingIndexInBoundsCheck.Count > 0 && expr[0] != null) {
+            expr = [AddIndexInBoundsCheck(expr[0], _exprsNeedingIndexInBoundsCheck)];
+            _exprsNeedingIndexInBoundsCheck = [];
+        }
         return expr;
     }
     
@@ -140,6 +156,9 @@ public class SimplifyExpression
     }
 
     private Expression ToBinaryExpression(BinaryExpr.Opcode op, List<Expression?> argExprs) {
+        if (argExprs.Count == 1 && argExprs[0] != null)
+            return argExprs[0];
+        
         Type? type = null;
         Type? argType = null;
         if (op == BinaryExpr.Opcode.Add || op == BinaryExpr.Opcode.Sub || 
@@ -263,7 +282,7 @@ public class SimplifyExpression
         }
         else return null;
 
-        Expression? lengthExpr = type switch {
+        Expression lengthExpr = type switch {
             _ when type.StartsWith("array<") => new ExprDotName(
                 null, array, new Name(null, "Length"), null),
             // default case: seq, set, multiset and map all use the same cardinality operator
@@ -294,8 +313,29 @@ public class SimplifyExpression
             return array;
         }
         var selectExpr = new SeqSelectExpr(null, true, array, index, null);
+        _exprsNeedingIndexInBoundsCheck.Add(selectExpr);
         AllGeneratedExprsTypes.Add((selectExpr, argType));
         return selectExpr;
+    }
+
+    private Expression AddIndexInBoundsCheck(Expression expr, List<Expression> selectExprs) {
+        if (selectExprs.Count == 0 || selectExprs[0] is not SeqSelectExpr seqSelExpr) 
+            return expr;
+        
+        var type = "";
+        if (seqSelExpr.Seq is NameSegment idExpr) {
+            type = DaikonInvariantParser.TypeInfo.First(
+                var => var.Item1 == idExpr.Name
+            ).Item2;
+        }
+        
+        Expression lengthExpr = type.StartsWith("array<")
+            ? new ExprDotName(null, seqSelExpr.Seq, new Name(null, "Length"), null)
+            : new UnaryOpExpr(null, UnaryOpExpr.Opcode.Cardinality, seqSelExpr.Seq);
+        var inBoundsExpr = new BinaryExpr(null, BinaryExpr.Opcode.Lt, seqSelExpr.E0, lengthExpr);
+        return selectExprs.Count > 1 ? 
+            new BinaryExpr(null, BinaryExpr.Opcode.And, inBoundsExpr, AddIndexInBoundsCheck(expr, selectExprs[1..])) :
+            new BinaryExpr(null, BinaryExpr.Opcode.And, inBoundsExpr, expr);
     }
     
     private Expression? ToNullComparisonSubexpression(Expression? obj) {

@@ -8,27 +8,33 @@ public class DaikonInvariantParser : Visitor
     public static readonly List<(string, string)> TypeInfo = ImportTypeInfo(); // (var name, var type)
     private readonly List<(Expression, int, Statement)> _invariantsPlacement = []; // (invariant, location, statement after which invariant should be inserted)
     private string _enclosingClassName = "";
+    private BlockStmt? _currentBlock;
+    private readonly List<(ReturnStmt, int)> _returnStmts = []; // (return stmt, location)
+    private bool _isLastStmtReturn;
     private Predicate<Statement>? _findStmtPred;
+    private Statement? _prevStmt;
     private (BlockStmt?, int) _targetStmt = (null, -1);
     
     private ControlDependenceAnalyzer? _cDepAnalyzer;
     
     public void Parse(ModuleDefinition module) {
         Visit(module);
-        if (InvariantInferrer.FaultyMethod == null)
+        if (SnapshotGenerator.FaultyMethod == null || InvariantParser.InvariantsAlreadyParsed)
             return;
-        var faultyMethod = InvariantInferrer.FaultyMethod;
+        var faultyMethod = SnapshotGenerator.FaultyMethod;
         if (faultyMethod.Body == null) return;
         _cDepAnalyzer = new ControlDependenceAnalyzer(faultyMethod);
 
         int location = module.StartToken.pos;
         var lines = File.ReadAllLines("inv.inv");
         foreach (var line in lines) {
-            if (line.EndsWith(":::ENTER") || line.EndsWith(":::EXIT")) {
+            if (line.EndsWith(":::ENTER") || line.Contains(":::EXIT")) {
                 if (line.Contains(faultyMethod.Name) && line.Contains(_enclosingClassName)) {
-                    location = line.EndsWith(":::ENTER") ? 
-                        faultyMethod.Body.StartToken.pos : 
-                        faultyMethod.Body.EndToken.pos;
+                    var locationStartIndex = line.IndexOf(":::EXIT", StringComparison.Ordinal) + 7;
+                    var returnIdx = int.TryParse(line[locationStartIndex..], out var intVal) ? intVal - 1 : _returnStmts.Count - 1;
+                    location = line.EndsWith(":::ENTER") ? faultyMethod.Body.StartToken.pos : 
+                        (line.EndsWith(":::EXIT") || line.EndsWith(":::EXIT00")) && !_isLastStmtReturn ?
+                        faultyMethod.Body.EndToken.pos : _returnStmts[returnIdx].Item2;
                 } else if (line.Contains("Dummy")) {
                     var locationStartIndex = line.IndexOf("Dummy", StringComparison.Ordinal) + 5;
                     var locationEndIndex = line.EndsWith(":::ENTER") ? 10 : 9;
@@ -42,6 +48,7 @@ public class DaikonInvariantParser : Visitor
             }
         }
         InstrumentWithInvariants();
+        InvariantParser.InvariantsAlreadyParsed = true;
     }
 
     private static List<(string, string)> ImportTypeInfo() {
@@ -64,21 +71,45 @@ public class DaikonInvariantParser : Visitor
     protected override void HandleMemberDecls(TopLevelDeclWithMembers decl) {
         _enclosingClassName = decl.Name;
         base.HandleMemberDecls(decl);
+        
+        if (SnapshotGenerator.FaultyMethod == null ||
+            SnapshotGenerator.PassingTestsMethod == null ||
+            SnapshotGenerator.FailingTestsMethod == null) 
+            return;
+        AstUtils.PrintTestCases(SnapshotGenerator.PassingTestsMethod);
+        AstUtils.PrintTestCases(SnapshotGenerator.FailingTestsMethod);
     }
     
     protected override void HandleMethod(Method method) {
         // distinguish passing from failing test execution
-        if (_enclosingClassName == "_default" && method.Name == "Passing")
+        if (_enclosingClassName == "_default" && method.Name == "Passing") {
+            SnapshotGenerator.PassingTestsMethod = method;
             AstUtils.PrintTestType(method, true);
-        if (_enclosingClassName == "_default" && method.Name == "Failing")
+        }
+        if (_enclosingClassName == "_default" && method.Name == "Failing") {
+            SnapshotGenerator.FailingTestsMethod = method;
             AstUtils.PrintTestType(method, false);
+        }
             
         // find the faulty method, i.e., where the violation occurs  
         if (!(method.StartToken.line <= SnapshotGenerator.ViolationLine &&
               method.EndToken.line >= SnapshotGenerator.ViolationLine))
             return;
-        InvariantInferrer.FaultyMethod = method;
+        SnapshotGenerator.FaultyMethod = method;
         base.HandleMethod(method);
+        if (method.Body is { Body.Count: > 0 } && method.Body.Body[^1] is ReturnStmt)
+            _isLastStmtReturn = true;
+    }
+    
+    protected override void VisitStatement(ProduceStmt pStmt) {
+        if (pStmt is ReturnStmt retStmt && _returnStmts.All(rStmt => rStmt.Item1 != retStmt)) {
+            if (_prevStmt != null) {
+                _returnStmts.Add((retStmt, _prevStmt.EndToken.pos));
+            } else if (_currentBlock != null) {
+                _returnStmts.Add((retStmt, _currentBlock.StartToken.pos));
+            }
+        }
+        base.VisitStatement(pStmt);
     }
 
     /// -------------------------
@@ -150,7 +181,7 @@ public class DaikonInvariantParser : Visitor
     private void FindInvariantPlacement(int location, Expression invariantExpr) {
         if (_invariantsPlacement.Any(i => i.Item2 == location && i.Item1.ToString() == invariantExpr.ToString()))
             return;
-        var faultyMethod = InvariantInferrer.FaultyMethod;
+        var faultyMethod = SnapshotGenerator.FaultyMethod;
         if (faultyMethod == null || faultyMethod.Body == null) return;
         
         if (location == faultyMethod.Body.StartToken.pos) {
@@ -158,19 +189,19 @@ public class DaikonInvariantParser : Visitor
         } else if (location == faultyMethod.Body.EndToken.pos) {
             _invariantsPlacement.Add((invariantExpr, location, faultyMethod.Body));
         } else {
-            _findStmtPred = stmt => stmt.EndToken.pos == location;
+            _findStmtPred = stmt => stmt.EndToken.pos == location || (stmt is BlockStmt bStmt && bStmt.StartToken.pos == location);
             HandleMethod(faultyMethod);
-            var prevStmt = (_targetStmt.Item1 != null && _targetStmt.Item2 != -1) ? 
-                _targetStmt.Item1.Body[_targetStmt.Item2] : null;
-            if (prevStmt != null) 
-                _invariantsPlacement.Add((invariantExpr, location, prevStmt));
+            var refStmt = _targetStmt.Item2 == -1 ? 
+                _targetStmt.Item1 : _targetStmt.Item1?.Body[_targetStmt.Item2];
+            if (refStmt != null)
+                _invariantsPlacement.Add((invariantExpr, location, refStmt));
             _findStmtPred = null;
             _targetStmt = (null, -1);
         }
     }
     
     private void InstrumentWithInvariants() {
-        var faultyMethod = InvariantInferrer.FaultyMethod;
+        var faultyMethod = SnapshotGenerator.FaultyMethod;
         if (faultyMethod == null || faultyMethod.Body == null) return;
 
         foreach (var (inv, location, placement) in _invariantsPlacement) {
@@ -183,8 +214,9 @@ public class DaikonInvariantParser : Visitor
             } else {
                 _findStmtPred = stmt => ReferenceEquals(stmt, placement);
                 HandleMethod(faultyMethod);
-                if (_targetStmt.Item1 != null && _targetStmt.Item2 != -1)
-                    _targetStmt.Item1.Body.Insert(_targetStmt.Item2 + 1, PrintInvariant(inv, location));
+                if (_targetStmt.Item1 == null)
+                    continue;
+                _targetStmt.Item1.Body.Insert(_targetStmt.Item2 + 1, PrintInvariant(inv, location));
                 _findStmtPred = null;
                 _targetStmt = (null, -1);
             }
@@ -203,12 +235,24 @@ public class DaikonInvariantParser : Visitor
     }
 
     protected override void HandleBlock(BlockStmt blockStmt) {
+        _currentBlock = blockStmt;
+        
+        if (_findStmtPred != null && _findStmtPred(blockStmt)) {
+            _targetStmt = (blockStmt, -1);
+            _prevStmt = null;
+            return;
+        }
+        
         foreach (var (stmt, i) in blockStmt.Body.Select((stmt, i) => (stmt, i))) {
             if (_findStmtPred != null && _findStmtPred(stmt)) {
                 _targetStmt = (blockStmt, i);
                 return;
             }
             HandleStatement(stmt);
+            _currentBlock = blockStmt;
+            _prevStmt = stmt;
         }
+        
+        _prevStmt = null;
     }
 }

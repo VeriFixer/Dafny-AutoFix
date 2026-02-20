@@ -1,12 +1,10 @@
 using Microsoft.Dafny;
-using Type = Microsoft.Dafny.Type;
 
 namespace SnapshotGenerator;
 
 public class IdentifierAvailabilityScanner(bool multipleModule = false) : Visitor(multipleModule)
 {
-    // (enclosing var, enclosing member celaration, name, type, position where availability starts, position where availability ends)
-    public List<(IVariable?, MemberDecl?, string, Type, int?, int?)> IdentifierAvailability { get; private set; } = [];
+    public List<Identifier> IdentifierAvailability { get; private set; } = [];
     public List<string> Ghosts { get; } = [];
 
     private List<Formal> _currentMethodOutputs = [];
@@ -24,7 +22,7 @@ public class IdentifierAvailabilityScanner(bool multipleModule = false) : Visito
     }
     
     protected override void HandleMemberDecls(TopLevelDeclWithMembers decl) {
-        List<(IVariable?, MemberDecl?, string, Type, int?, int?)> prevIdentifierAvailability = IdentifierAvailability.ToList();
+        List<Identifier> prevIdentifierAvailability = IdentifierAvailability.ToList();
         if (decl.StartToken.line <= SnapshotGenerator.ViolationLine && 
             decl.EndToken.line >= SnapshotGenerator.ViolationLine) {
             InsideFaultyTopLevelDecl = true;
@@ -38,8 +36,10 @@ public class IdentifierAvailabilityScanner(bool multipleModule = false) : Visito
             } else if (member is Function func) { // includes predicate
                 HandleFunction(func);
             } else if (member is Field f) {
-                if (InsideDefaultClass || InsideFaultyTopLevelDecl)
-                    IdentifierAvailability.Add((null, f, f.Name, f.Type, null, null));
+                if (InsideDefaultClass || InsideFaultyTopLevelDecl) {
+                    var identifier = new Identifier(null, f, f.Type, null, null);
+                    IdentifierAvailability.Add(identifier);
+                }
                 if (f.IsGhost)
                     Ghosts.Add(f.Name);
             }
@@ -57,11 +57,17 @@ public class IdentifierAvailabilityScanner(bool multipleModule = false) : Visito
             return;
         _foundFaultyMethod = true;
         
-        foreach (var input in method.Ins)
-            IdentifierAvailability.Add((
-                input, null, input.Name, input.Type, 
-                method.StartToken.pos, method.EndToken.pos
-            ));
+        foreach (var input in method.Ins) {
+            var identifier = new Identifier(input, null, input.Type, method.StartToken.pos, method.EndToken.pos);
+            IdentifierAvailability.Add(identifier);
+            if (input.IsGhost)
+                Ghosts.Add(input.Name);
+        }
+        foreach (var output in method.Outs) {
+            if (output.IsGhost)
+                Ghosts.Add(output.Name);
+        }
+        
         _currentMethodOutputs = method.Outs;
         base.HandleMethod(method);
         _currentMethodOutputs = [];
@@ -76,25 +82,21 @@ public class IdentifierAvailabilityScanner(bool multipleModule = false) : Visito
     
     protected override void VisitStatement(ConcreteAssignStatement cAStmt) {
         foreach (var lhs in cAStmt.Lhss) {
-            if (IdentifierAvailability.Count(id => id.Item3 == lhs.ToString()) > 0)
+            if (IdentifierAvailability.Count(id => id.Name == lhs.ToString()) > 0)
                 continue;
             var output = _currentMethodOutputs.Find(output => output.Name == lhs.ToString());
             if (output == null)
                 continue;
-            IdentifierAvailability.Add((
-                output, null, lhs.ToString(), 
-                lhs.Type, lhs.EndToken.pos, _currentScopeLimit
-            ));
+            var identifier = new Identifier(output, null, lhs.Type, lhs.EndToken.pos, _currentScopeLimit);
+            IdentifierAvailability.Add(identifier);
         }
         base.VisitStatement(cAStmt);
     }
     
     protected override void VisitStatement(VarDeclStmt vDeclStmt) {
         foreach (var lhs in vDeclStmt.Locals) {
-            IdentifierAvailability.Add((
-                lhs, null, lhs.Name, lhs.Type, 
-                lhs.EndToken.pos, _currentScopeLimit
-            ));
+            var identifier = new Identifier(lhs, null, lhs.Type, lhs.EndToken.pos, _currentScopeLimit);
+            IdentifierAvailability.Add(identifier);
             if (vDeclStmt.IsGhost)
                 Ghosts.Add(lhs.Name);
         }

@@ -17,6 +17,11 @@ public class SnapshotGenerator : PluginConfiguration
     private bool _passingInvariantInference;
     private bool _failingInvariantInference;
     
+    public static Method? FaultyMethod { get; set; }
+    public static Method? MainMethod { get; set; }
+    public static Method? PassingTestsMethod { get; set; }
+    public static Method? FailingTestsMethod { get; set; }
+    
     public override void ParseArguments(string[] args) {
         if (args.Length < 3) return;
         ViolationLine = int.Parse(args[0]);
@@ -62,7 +67,6 @@ public class SnapshotGenerator : PluginConfiguration
 
 public class Enumerator(ErrorReporter reporter) : Rewriter(reporter)
 {
-    public static Method? FaultyMethod { get; set; }
     public static readonly List<Expression> ProgramAbstractions = [];
 
     public override void PostResolve(ModuleDefinition module) {
@@ -71,7 +75,7 @@ public class Enumerator(ErrorReporter reporter) : Rewriter(reporter)
 
         ExpressionScanner scanner = new();
         scanner.Visit(module);
-        if (FaultyMethod == null) return;
+        if (SnapshotGenerator.FaultyMethod == null) return;
         // collect additional predicates from faulty method after fully parsing the AST
         scanner.VisitFaultyMethod();
 
@@ -88,8 +92,6 @@ public class Enumerator(ErrorReporter reporter) : Rewriter(reporter)
 
 public class InvariantInferrer : Rewriter
 {
-    public static Method? FaultyMethod { get; set; }
-    public static Method? MainMethod { get; set; }
     public static bool PassingInvariantInference { get; private set; }
     public static bool FailingInvariantInference { get; private set; }
     
@@ -107,7 +109,7 @@ public class InvariantInferrer : Rewriter
         IdentifierAvailabilityScanner scanner = new(true);
         scanner.Visit(module);
         var traceIdentifiers = scanner.IdentifierAvailability.Where(
-            expr => !scanner.Ghosts.Contains(expr.Item3)
+            expr => !scanner.Ghosts.Contains(expr.Name)
         ).ToList();
         DaikonInstrumenter instrumenter = new(traceIdentifiers);
         instrumenter.Instrument(module);
@@ -121,15 +123,11 @@ public class InvariantInferrer : Rewriter
 
 public class InvariantParser(ErrorReporter reporter) : Rewriter(reporter)
 {
+    public static bool InvariantsAlreadyParsed = false;
+    
     public override void PreResolve(ModuleDefinition module) {
-        if (!(module.Name == "_module" ||
-             (module.StartToken.pos <= SnapshotGenerator.ViolationLine &&
-              module.EndToken.pos >= SnapshotGenerator.ViolationLine))) 
-            return;
-
         DaikonInvariantParser invariantParser = new();
         invariantParser.Parse(module);
-        InvariantInferrer.FaultyMethod = null;
     }
     
     public override void PostResolve(Program program) {
