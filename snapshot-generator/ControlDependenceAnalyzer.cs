@@ -4,160 +4,151 @@ namespace SnapshotGenerator;
 
 public sealed class ControlDependenceAnalyzer : Visitor
 {
-    // (statement, in case statement is the method's body itself whether it's its start or not,
-    // whether the statement includes the faulty statement, whether the statement appears before the faulty statement,
-    // depth, control distance to the faulty location)
-    public static List<(Statement, bool, bool, bool, int)> CDists = [];
-    private Statement? _faultyLocation;
+    public Dictionary<Statement, int> CDists = [];
+    private Statement? _violationStmt;
     private readonly bool _firstVisit = true;
-    private List<Statement> _beforeFaultCurrentScope = [];
-    private List<Statement> _afterFaultCurrentScope = [];
+    private bool _visitingViolationBlockStmt;
+    private bool _visitingBlockWithViolationStmt;
+    private bool _visitingOutsideViolationBlockStmt;
+    private bool _beforeViolationStmt;
+    private Statement? _prevStmt;
+    private BlockStmt? _outerBlockWithViolationStmt;
 
-    public ControlDependenceAnalyzer(Method faultyMethod) {
-        if (faultyMethod.Body == null) return;
+    public ControlDependenceAnalyzer() {
+        var faultyMethod = SnapshotGenerator.FaultyMethod;
+        if (faultyMethod?.Body == null) return;
         
         // find faulty location
         if (SnapshotGenerator.ViolationLine <= faultyMethod.Body.StartToken.line)
-            _faultyLocation = faultyMethod.Body;
+            _violationStmt = faultyMethod.Body;
         HandleMethod(faultyMethod);
         _firstVisit = false;
-        if (_faultyLocation == null) return;
-        
-        // compute the control distance from each method location to the faulty location
-        // ComputeCDist(faultyMethod.Body, true); // TODO
+        if (_violationStmt == null) return;
+        // compute the control distance from each method location to the violation location
+        CDists.Add(_violationStmt, 0);
         HandleMethod(faultyMethod);
-        using (StreamWriter sw = File.AppendText("debug.txt")) {
-            TextWriter syncWriter = TextWriter.Synchronized(sw);
-            syncWriter.WriteLine(String.Join("\n", CDists));
-        }
     }
 
-    protected override void HandleStatement(Statement stmt) {
-        if (_firstVisit) {
-            CheckForFaultyStatement(stmt);
-        } else {
-            ComputeCDist(stmt);
-            if (stmt is IfStmt || stmt is LoopStmt || stmt is AlternativeStmt ||
-                stmt is MatchStmt || stmt is NestedMatchStmt)
-                base.HandleStatement(stmt);
-        }
-    }
-    
-    protected override void HandleBlock(BlockStmt blockStmt) {
-        // using (StreamWriter sw = File.AppendText("debug2.txt")) {
-        //     TextWriter syncWriter = TextWriter.Synchronized(sw);
-        //     syncWriter.WriteLine("\nVisit: " + blockStmt);
-        //     syncWriter.WriteLine("Entry: " + String.Join(" ", _beforeFaultCurrentScope));
-        // }
-        var prevScope = _beforeFaultCurrentScope;
-        _beforeFaultCurrentScope = blockStmt.Body.ToList();
-        _afterFaultCurrentScope = prevScope.Concat(_beforeFaultCurrentScope).ToList();
-        base.HandleBlock(blockStmt);
-        // using (StreamWriter sw = File.AppendText("debug2.txt")) {
-        //     TextWriter syncWriter = TextWriter.Synchronized(sw);
-        //     syncWriter.WriteLine("After children visit: " + String.Join(" ", _beforeFaultCurrentScope));
-        // }
-        // using (StreamWriter sw = File.AppendText("debug2.txt")) {
-        //     TextWriter syncWriter = TextWriter.Synchronized(sw);
-            // syncWriter.WriteLine("Hello");
-            // syncWriter.WriteLine("prevScope: " + String.Join(" ", prevScope));
-            // syncWriter.WriteLine("_currScope: " + String.Join(" ", _currentScope));
-            // foreach (var (stmt, i) in prevScope.Select((stmt, i) => (stmt, i))) 
-            // {
-            //     syncWriter.WriteLine(i + ": " + stmt);
-            // }
-            // syncWriter.Flush();
-        // }
-        _beforeFaultCurrentScope.AddRange(prevScope);
-        // using (StreamWriter sw = File.AppendText("debug2.txt")) {
-        //     TextWriter syncWriter = TextWriter.Synchronized(sw);
-        //     syncWriter.WriteLine("Exit: " + String.Join(" ", _beforeFaultCurrentScope));
-        // }        
-        // using (StreamWriter sw = File.AppendText("debug2.txt")) {
-        //     TextWriter syncWriter = TextWriter.Synchronized(sw);
-        //     syncWriter.WriteLine("Finish visiting: " + blockStmt + "\n");
-        // }
-    }
-
-    private void CheckForFaultyStatement(Statement stmt) {
+    private void CheckForViolationStatement(Statement stmt) {
         if (stmt.StartToken.line == SnapshotGenerator.ViolationLine &&
-            stmt.EndToken.line == SnapshotGenerator.ViolationLine &&
-            stmt.StartToken.col <= SnapshotGenerator.ViolationColumn &&
-            stmt.EndToken.col >= SnapshotGenerator.ViolationColumn) 
+            stmt.EndToken.line == SnapshotGenerator.ViolationLine) 
         {
-            _faultyLocation = stmt;
+            _violationStmt = stmt;
         }
         else if (stmt.StartToken.line <= SnapshotGenerator.ViolationLine &&
                  stmt.EndToken.line >= SnapshotGenerator.ViolationLine) 
-        {
-            _faultyLocation ??= stmt;
-        } else if (_faultyLocation != null) {
-            if (CDists.All(s => s.Item1 != stmt))
-                CDists.Add((stmt, false, false, false, 0));
+        { // the violation location may be an entire block (e.g., a loop with a violated invariant)
+            _violationStmt ??= stmt;
         }
         base.HandleStatement(stmt);
     }
 
-    private void ComputeCDist(Statement stmt) {
-        using (StreamWriter sw = File.AppendText("debug1.txt")) {
-            TextWriter syncWriter = TextWriter.Synchronized(sw);
-            syncWriter.WriteLine("Visit: " + stmt);
-            syncWriter.WriteLine("Position: " + stmt.StartToken.pos + "-" + stmt.EndToken.pos);
-            syncWriter.WriteLine("CurrentScope: " + String.Join(" ", _beforeFaultCurrentScope) + "\n");
-        }
-        if (_faultyLocation == null) return;
-        var includes = stmt.StartToken.pos <= _faultyLocation.StartToken.pos &&
-            stmt.EndToken.pos >= _faultyLocation.EndToken.pos;
-        var before = stmt.EndToken.pos <= _faultyLocation.StartToken.pos;
-        
-        if ((includes && stmt != _faultyLocation) || stmt == _faultyLocation) return;
-        if (before) { // increment distance for statements located before the faulty statement
-            if (CDists.All(s => s.Item1 != stmt))
-                CDists.Add((stmt, false, includes, before, 0));
-            using (StreamWriter sw = File.AppendText("debug1.txt")) {
-                TextWriter syncWriter = TextWriter.Synchronized(sw);
-                syncWriter.WriteLine("Before faulty statement");
-            }
-            var matches = CDists.Where(s => s.Item4 && _beforeFaultCurrentScope.Select(s1 => s1.ToString()).Contains(s.Item1.ToString()));
-            using (StreamWriter sw = File.AppendText("debug1.txt")) {
-                TextWriter syncWriter = TextWriter.Synchronized(sw);
-                syncWriter.WriteLine("Will increase: " + String.Join(" ", matches));
-            }
-            foreach (var s in CDists) {
-                using (StreamWriter sw = File.AppendText("debug1.txt")) {
-                    TextWriter syncWriter = TextWriter.Synchronized(sw);
-                    syncWriter.WriteLine("\t" + s.Item1);
-                    syncWriter.WriteLine("\t" + s.Item4);
-                    syncWriter.WriteLine("\t" + _beforeFaultCurrentScope.Select(s1 => s1.ToString()).Contains(s.Item1.ToString()));
-                }
-            }
-            CDists = CDists.Select(s =>
-                s.Item4 && _beforeFaultCurrentScope.Select(s1 => s1.ToString()).Contains(s.Item1.ToString())
-                    ? (s.Item1, s.Item2, s.Item3, s.Item4, s.Item5 + 1) : s
-            ).ToList();
+
+    protected override void HandleStatement(Statement stmt) {
+        if (_firstVisit) {
+            CheckForViolationStatement(stmt);
         } else {
-            using (StreamWriter sw = File.AppendText("debug1.txt")) {
-                TextWriter syncWriter = TextWriter.Synchronized(sw);
-                syncWriter.WriteLine("After faulty statement");
+            base.HandleStatement(stmt);
+        }
+    }
+
+    protected override void HandleBlock(BlockStmt blockStmt) {
+        if (_firstVisit) {
+            base.HandleBlock(blockStmt);
+            return;
+        }
+
+        if (_violationStmt == null) return;
+        var prevVisitingViolationBlockStmt = _visitingViolationBlockStmt;
+        var prevVisitingBlockWithViolationStmt = _visitingBlockWithViolationStmt;
+        var prevVisitingOutsideViolationBlockStmt = _visitingOutsideViolationBlockStmt;
+        
+        if (blockStmt == _violationStmt) // blockStmt is, in its entirety, the violation location
+            _visitingViolationBlockStmt = true;
+        if (_visitingViolationBlockStmt)
+            InitializeViolationBlockCDists(blockStmt.Body);
+        
+        if (_visitingBlockWithViolationStmt) { // inside sub-blocks of the violation block
+            ComputeCDists(blockStmt.Body, _beforeViolationStmt);
+            ComputeSubBlockCDists(blockStmt.Body, _beforeViolationStmt ? blockStmt.Body.Count + 1 : -1);
+        }
+        
+        var violationStmtIdx = blockStmt.Body.IndexOf(_violationStmt);
+        if (violationStmtIdx != -1) { // blockStmt contains the violation location
+            _outerBlockWithViolationStmt = blockStmt;
+            _visitingBlockWithViolationStmt = true;
+            ComputeCDists(blockStmt.Body, violationStmtIdx);
+            ComputeSubBlockCDists(blockStmt.Body, violationStmtIdx);
+        }
+        
+        if (!_visitingViolationBlockStmt && !_visitingBlockWithViolationStmt && violationStmtIdx == -1) { // outside of block containing violation location
+            base.HandleBlock(blockStmt);
+            _visitingOutsideViolationBlockStmt = true;
+            var violationBlockIdx = _outerBlockWithViolationStmt != null ?
+                blockStmt.Body.FindIndex(stmt => stmt.SubStatements.Contains(_outerBlockWithViolationStmt)) : -1;
+            if (violationBlockIdx != -1) {
+                ComputeCDists(blockStmt.Body, violationBlockIdx);
+            } else {
+                ComputeCDists(blockStmt.Body, _beforeViolationStmt);
             }
-            var matches = CDists.Where(s => !s.Item4 && (_beforeFaultCurrentScope.Select(s1 => s1.ToString()).Contains(s.Item1.ToString())) && (s.Item1.StartToken.pos >= stmt.EndToken.pos || s.Item1 == stmt));
-            using (StreamWriter sw = File.AppendText("debug1.txt")) {
-                TextWriter syncWriter = TextWriter.Synchronized(sw);
-                syncWriter.WriteLine("Will increase: " + String.Join(" ", matches));
-            }
-            foreach (var s in CDists) {
-                using (StreamWriter sw = File.AppendText("debug1.txt")) {
-                    TextWriter syncWriter = TextWriter.Synchronized(sw);
-                    syncWriter.WriteLine("\t" + s.Item1);
-                    syncWriter.WriteLine("\t" + s.Item1.StartToken.pos);
-                    syncWriter.WriteLine("\t" + s.Item4);
-                    syncWriter.WriteLine("\t" + _afterFaultCurrentScope.Select(s1 => s1.ToString()).Contains(s.Item1.ToString()));
-                }
-            }
-            CDists = CDists.Select(s =>
-                !s.Item4 && (_afterFaultCurrentScope.Select(s1 => s1.ToString()).Contains(s.Item1.ToString())) && (s.Item1.StartToken.pos >= stmt.EndToken.pos || s.Item1 == stmt)
-                    ? (s.Item1, s.Item2, s.Item3, s.Item4, s.Item5 + 1) : s
-            ).ToList();
+            ComputeSubBlockCDists(blockStmt.Body, 
+                violationBlockIdx != -1 ? violationBlockIdx : 
+                _beforeViolationStmt ? blockStmt.Body.Count + 1 : -1);
+            if (violationBlockIdx != -1)
+                _outerBlockWithViolationStmt = blockStmt;
+        }
+        
+        _visitingViolationBlockStmt = prevVisitingViolationBlockStmt;
+        _visitingBlockWithViolationStmt = prevVisitingBlockWithViolationStmt;
+        _visitingOutsideViolationBlockStmt = prevVisitingOutsideViolationBlockStmt;
+    }
+
+    private void InitializeViolationBlockCDists(List<Statement> blockBody) {
+        foreach (var stmt in blockBody)
+            CDists.Add(stmt, 0);
+    }
+
+    private void ComputeCDists(List<Statement> blockBody, bool beforeViolationStmt) {
+        var startIdx = beforeViolationStmt ? blockBody.Count - 1 : 0;
+        Predicate<int> endCondition = beforeViolationStmt ? i => i >= 0 : i => i < blockBody.Count;
+
+        for (var i = startIdx; endCondition(i); ) {
+            var currentStmt = blockBody[i];
+            var prevStmtIdx = beforeViolationStmt ? i + 1 : i - 1;
+            var prevStmt = prevStmtIdx >= 0 && prevStmtIdx < blockBody.Count ? blockBody[prevStmtIdx] : _prevStmt;
+            i = beforeViolationStmt ? i - 1 : i + 1;
+            if (CDists.ContainsKey(currentStmt) || prevStmt == null || !CDists.ContainsKey(prevStmt))
+                continue;
+            var prevStmtDist = CDists.First(stmt => stmt.Key == prevStmt).Value;
+            CDists.Add(currentStmt, prevStmtDist + 1);
+        }
+    }
+
+    private void ComputeCDists(List<Statement> blockBody, int violationLocationIdx) {
+        var blockDivider = violationLocationIdx + 1;
+        if (_visitingOutsideViolationBlockStmt && blockBody[violationLocationIdx].SubStatements.Contains(_outerBlockWithViolationStmt)) {
+            _prevStmt = _outerBlockWithViolationStmt?.Body[0];
+            blockDivider = violationLocationIdx;
+        }
+        ComputeCDists(blockBody[..blockDivider], true);
+        
+        blockDivider = violationLocationIdx;
+        if (_visitingOutsideViolationBlockStmt && blockBody[violationLocationIdx].SubStatements.Contains(_outerBlockWithViolationStmt)) {
+            _prevStmt = _outerBlockWithViolationStmt?.Body[^1];
+            blockDivider = violationLocationIdx + 1;
+        }
+        ComputeCDists(blockBody[blockDivider..], false);
+    }
+    
+    private void ComputeSubBlockCDists(List<Statement> blockBody, int violationStmtIdx) {
+        foreach (var (stmt, i) in blockBody.Select((stmt, i) => (stmt, i))) {
+            if (!(stmt is BlockStmt || stmt is IfStmt || stmt is LoopStmt || stmt is AlternativeStmt || 
+                  stmt is MatchStmt || stmt is NestedMatchStmt) || stmt.SubStatements.Contains(_outerBlockWithViolationStmt))
+                continue;
+            _beforeViolationStmt = i < violationStmtIdx;
+            _prevStmt = _beforeViolationStmt && i < blockBody.Count - 1 ? blockBody[i + 1] : 
+                i > 0 ? blockBody[i - 1] : null;
+            HandleStatement(stmt);
         }
     }
 }

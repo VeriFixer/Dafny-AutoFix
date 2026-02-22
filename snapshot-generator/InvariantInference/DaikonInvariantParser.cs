@@ -15,15 +15,12 @@ public class DaikonInvariantParser : Visitor
     private Statement? _prevStmt;
     private (BlockStmt?, int) _targetStmt = (null, -1);
     
-    private ControlDependenceAnalyzer? _cDepAnalyzer;
-    
     public void Parse(ModuleDefinition module) {
         Visit(module);
         if (SnapshotGenerator.FaultyMethod == null || InvariantParser.InvariantsAlreadyParsed)
             return;
         var faultyMethod = SnapshotGenerator.FaultyMethod;
         if (faultyMethod.Body == null) return;
-        _cDepAnalyzer = new ControlDependenceAnalyzer(faultyMethod);
 
         int location = module.StartToken.pos;
         var lines = File.ReadAllLines("inv.inv");

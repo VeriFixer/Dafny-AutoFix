@@ -128,6 +128,12 @@ public class InvariantParser(ErrorReporter reporter) : Rewriter(reporter)
     public override void PreResolve(ModuleDefinition module) {
         DaikonInvariantParser invariantParser = new();
         invariantParser.Parse(module);
+        
+        var cDepAnalyzer = new ControlDependenceAnalyzer();
+        using (StreamWriter sw = File.AppendText("debug.txt")) {
+            TextWriter syncWriter = TextWriter.Synchronized(sw);
+            syncWriter.WriteLine(String.Join("\n", cDepAnalyzer.CDists));
+        }
     }
     
     public override void PostResolve(Program program) {
