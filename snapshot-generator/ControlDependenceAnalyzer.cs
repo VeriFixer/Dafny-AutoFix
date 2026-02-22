@@ -63,7 +63,7 @@ public sealed class ControlDependenceAnalyzer : Visitor
         var prevVisitingBlockWithViolationStmt = _visitingBlockWithViolationStmt;
         var prevVisitingOutsideViolationBlockStmt = _visitingOutsideViolationBlockStmt;
         
-        if (blockStmt == _violationStmt) // blockStmt is, in its entirety, the violation location
+        if (_violationStmt.SubStatements.Contains(blockStmt)) // blockStmt is, in its entirety, the violation location
             _visitingViolationBlockStmt = true;
         if (_visitingViolationBlockStmt)
             InitializeViolationBlockCDists(blockStmt.Body);
