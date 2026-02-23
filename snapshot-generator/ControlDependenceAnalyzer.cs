@@ -105,30 +105,8 @@ public sealed class ControlDependenceAnalyzer : Visitor
     }
 
     private void InitializeViolationBlockCDists(List<Statement> blockBody) {
-        foreach (var stmt in blockBody) {
+        foreach (var stmt in blockBody)
             CDists.Add(stmt, 0);
-            if (stmt is BlockStmt bStmt1) {
-                InitializeViolationBlockCDists(bStmt1.Body);
-            } else if (stmt is IfStmt ifStmt) {
-                InitializeViolationBlockCDists(ifStmt.Thn.Body);
-                if (ifStmt.Els is BlockStmt bStmt2)
-                    InitializeViolationBlockCDists(bStmt2.Body);
-            } else if (stmt is OneBodyLoopStmt loopStmt) {
-                InitializeViolationBlockCDists(loopStmt.Body.Body);
-            } else if (stmt is AlternativeLoopStmt altLStmt) {
-                InitializeViolationBlockCDists(altLStmt.Alternatives
-                    .Select(a => a.Body).SelectMany(l => l).ToList());
-            } else if (stmt is AlternativeStmt altStmt) {
-                InitializeViolationBlockCDists(altStmt.Alternatives
-                    .Select(aStmt => aStmt.Body).SelectMany(l => l).ToList());
-            } else if (stmt is MatchStmt matchStmt) {
-                InitializeViolationBlockCDists(matchStmt.Cases
-                    .Select(cs => cs.Body).SelectMany(l => l).ToList());
-            } else if (stmt is NestedMatchStmt nestedStmt) {
-                InitializeViolationBlockCDists(nestedStmt.Cases
-                    .Select(cs => cs.Body).SelectMany(l => l).ToList());
-            }
-        }
     }
 
     private void ComputeCDists(List<Statement> blockBody, bool beforeViolationStmt) {
