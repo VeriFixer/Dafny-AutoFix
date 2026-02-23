@@ -150,15 +150,15 @@ public sealed class ControlDependenceAnalyzer : Visitor
     private void ComputeCDists(List<Statement> blockBody, int violationLocationIdx) {
         var blockDivider = violationLocationIdx + 1;
         if (_visitingOutsideViolationBlockStmt && blockBody[violationLocationIdx].SubStatements.Contains(_outerBlockWithViolationStmt)) {
-            _prevStmt = _outerBlockWithViolationStmt?.Body[0];
             blockDivider = violationLocationIdx;
+            _prevStmt = DeterminePrevStmt(_outerBlockWithViolationStmt?.Body[0], true);
         }
         ComputeCDists(blockBody[..blockDivider], true);
         
         blockDivider = violationLocationIdx;
         if (_visitingOutsideViolationBlockStmt && blockBody[violationLocationIdx].SubStatements.Contains(_outerBlockWithViolationStmt)) {
-            _prevStmt = _outerBlockWithViolationStmt?.Body[^1];
             blockDivider = violationLocationIdx + 1;
+            _prevStmt = DeterminePrevStmt(_outerBlockWithViolationStmt?.Body[^1], false);
         }
         ComputeCDists(blockBody[blockDivider..], false);
     }
@@ -169,9 +169,53 @@ public sealed class ControlDependenceAnalyzer : Visitor
                   stmt is MatchStmt || stmt is NestedMatchStmt) || stmt.SubStatements.Contains(_outerBlockWithViolationStmt))
                 continue;
             _beforeViolationStmt = i < violationStmtIdx;
-            _prevStmt = _beforeViolationStmt && i < blockBody.Count - 1 ? blockBody[i + 1] : 
-                i > 0 ? blockBody[i - 1] : null;
+            _prevStmt = _beforeViolationStmt && i < blockBody.Count - 1 ? 
+                DeterminePrevStmt(blockBody[i + 1], _beforeViolationStmt) :
+                i > 0 ? DeterminePrevStmt(blockBody[i - 1], _beforeViolationStmt) : null;
             HandleStatement(stmt);
         }
+    }
+
+    private Statement? DeterminePrevStmt(Statement? prevStmt, bool before) {
+        if (prevStmt == null) return null;
+        if (CDists.ContainsKey(prevStmt))
+            return prevStmt;
+        if (!(prevStmt is BlockStmt || prevStmt is IfStmt || prevStmt is LoopStmt ||
+              prevStmt is AlternativeStmt || prevStmt is MatchStmt || prevStmt is NestedMatchStmt))
+            return null;
+
+        Statement? newPrevStmt = null;
+        if (prevStmt is BlockStmt bStmt1) {
+            newPrevStmt = DeterminePrevStmt([bStmt1.Body], before);
+        } else if (prevStmt is IfStmt ifStmt) {
+            List<List<Statement>> blocks = ifStmt.Els is BlockStmt bStmt ? 
+                [ifStmt.Thn.Body, bStmt.Body] : [ifStmt.Thn.Body];
+            newPrevStmt = DeterminePrevStmt(blocks, before);
+        } else if (prevStmt is OneBodyLoopStmt loopStmt) {
+            newPrevStmt = DeterminePrevStmt([loopStmt.Body.Body], before);
+        } else if (prevStmt is AlternativeLoopStmt altLStmt) {
+            newPrevStmt = DeterminePrevStmt(altLStmt.Alternatives
+                .Select(a => a.Body).ToList(), before);
+        } else if (prevStmt is AlternativeStmt altStmt) {
+            newPrevStmt = DeterminePrevStmt(altStmt.Alternatives
+                .Select(a => a.Body).ToList(), before);
+        } else if (prevStmt is MatchStmt matchStmt) {
+            newPrevStmt = DeterminePrevStmt(matchStmt.Cases
+                .Select(cs => cs.Body).ToList(), before);
+        } else if (prevStmt is NestedMatchStmt nestedStmt) {
+            newPrevStmt = DeterminePrevStmt(nestedStmt.Cases
+                .Select(cs => cs.Body).ToList(), before);
+        }
+        return newPrevStmt;
+    }
+
+    private Statement? DeterminePrevStmt(List<List<Statement>> stmts, bool before) {
+        Statement? newPrevStmt = null;
+        var stmtsByIncreasingBlockSize = stmts.OrderBy(l => l.Count).ToList();
+        foreach (var stmt in stmtsByIncreasingBlockSize) {
+            newPrevStmt = DeterminePrevStmt(stmt[before ? 0 : stmt.Count - 1], before);
+            if (newPrevStmt != null) break;
+        }
+        return newPrevStmt;
     }
 }
