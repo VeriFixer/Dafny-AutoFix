@@ -149,7 +149,7 @@ public sealed class ControlDependenceAnalyzer : Visitor
             _beforeViolationStmt = i < violationStmtIdx;
             _prevStmt = _beforeViolationStmt && i < blockBody.Count - 1 ? 
                 DeterminePrevStmt(blockBody[i + 1], _beforeViolationStmt) :
-                i > 0 ? DeterminePrevStmt(blockBody[i - 1], _beforeViolationStmt) : null;
+                i > 0 ? DeterminePrevStmt(blockBody[i - 1], _beforeViolationStmt) : stmt;
             HandleStatement(stmt);
         }
     }
