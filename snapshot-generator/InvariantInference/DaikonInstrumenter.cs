@@ -6,11 +6,10 @@ namespace SnapshotGenerator.InvariantInference;
 public class DaikonInstrumenter(List<Identifier> identifierAvailability) : Visitor(true)
 {
     private TopLevelDeclWithMembers? _currentTopLevelDecl;
-    private BlockStmt? _currentBlock;
     private readonly List<Method> _newMethods = [];
     private List<Statement> _newBlockBody = [];
     private readonly List<Statement> _newStmts = [];
-    private readonly List<(ReturnStmt, BlockStmt)> _returnStmts = []; // (return stmt, enclosing block)
+    private ReturnStmt? _lastStmtReturn;
     
     public void Instrument(ModuleDefinition module) {
         Visit(module);
@@ -50,6 +49,8 @@ public class DaikonInstrumenter(List<Identifier> identifierAvailability) : Visit
         SnapshotGenerator.FaultyMethod = method;
         
         // instrument the method with calls to dummy methods for invariant inference
+        if (method.Body is { Body.Count: > 0 } && method.Body.Body[^1] is ReturnStmt rStmt)
+            _lastStmtReturn = rStmt;
         if (method.Body != null)
             HandleBlock(method.Body);
     }
@@ -60,7 +61,6 @@ public class DaikonInstrumenter(List<Identifier> identifierAvailability) : Visit
     protected override void HandleBlock(BlockStmt blockStmt) {
         var faultyMethod = SnapshotGenerator.FaultyMethod;
         
-        _currentBlock = blockStmt;
         var prevNewBlock = _newBlockBody;
         _newBlockBody = [];
         
@@ -69,8 +69,9 @@ public class DaikonInstrumenter(List<Identifier> identifierAvailability) : Visit
         foreach (var (stmt, i) in blockStmt.Body.Select((stmt, i) => (stmt, i))) {
             _newBlockBody.Add(stmt);
             HandleStatement(stmt);
-            _currentBlock = blockStmt;
-            if (stmt is ReturnStmt || (i == blockStmt.Body.Count - 1 && blockStmt == faultyMethod?.Body))
+            if (stmt is ReturnStmt || 
+                (i < blockStmt.Body.Count -1 && blockStmt.Body[i + 1] == _lastStmtReturn) || 
+                (i == blockStmt.Body.Count - 1 && blockStmt == faultyMethod?.Body))
                 continue;
             InstrumentLine(stmt.EndToken);
         }
@@ -78,15 +79,10 @@ public class DaikonInstrumenter(List<Identifier> identifierAvailability) : Visit
         blockStmt.Body = _newBlockBody;
         _newBlockBody = prevNewBlock;
     }
-    
-    protected override void VisitStatement(ProduceStmt pStmt) {
-        if (pStmt is ReturnStmt rStmt && _currentBlock != null)
-            _returnStmts.Add((rStmt, _currentBlock));
-        base.VisitStatement(pStmt);
-    }
 
     private void InstrumentLine(IOrigin token) {
         if (_currentTopLevelDecl == null) return;
+        
         var availableIdentifiers = identifierAvailability.Where(
             id => 
                 (token.pos > id.AvailabilityStartPos && token.pos < id.AvailabilityEndPos) || 
@@ -166,14 +162,8 @@ public class DaikonInstrumenter(List<Identifier> identifierAvailability) : Visit
         var faultyMethod = SnapshotGenerator.FaultyMethod;
         var mainMethod = SnapshotGenerator.MainMethod;
         if (faultyMethod == null || mainMethod == null) return;
-
-        List<string> pointTypes = ["ENTER", "EXIT00"];
-        if (method.Name == SnapshotGenerator.FaultyMethod?.Name) {
-            for (var i = 0; i < _returnStmts.Count; i++)
-                pointTypes.Add($"EXIT{i + 1}");
-        }
         
-        foreach (var type in pointTypes) {
+        foreach (var type in new List<string> { "ENTER", "EXIT00" }) {
             var programPointDecl = $"ppt {method.FullSanitizedName}():::{type}\\n";
             var declarationElement = AstUtils.CreateStringLiteral(mainMethod.Origin, programPointDecl);
             _newStmts.Add(new PrintStmt(mainMethod.Origin, [declarationElement]));
@@ -184,7 +174,7 @@ public class DaikonInstrumenter(List<Identifier> identifierAvailability) : Visit
             if (method == faultyMethod) {
                 AddFaultyMethodVariableDeclarations(method, type);
             } else {
-                AddDummyMethodVariableDeclarations(method, type.StartsWith("EXIT"));
+                AddDummyMethodVariableDeclarations(method, type == "EXIT00");
             }
             
             var delimElement = AstUtils.CreateStringLiteral(method.Origin, "\\n");
@@ -193,14 +183,7 @@ public class DaikonInstrumenter(List<Identifier> identifierAvailability) : Visit
     }
 
     private void AddFaultyMethodVariableDeclarations(Method method, string pointType) {
-        var locationStartIndex = pointType.IndexOf("EXIT", StringComparison.Ordinal) + 7;
-        var returnIdx = locationStartIndex < pointType.Length && 
-            int.TryParse(pointType[locationStartIndex..], out var intVal) ? 
-            intVal - 1 : _returnStmts.Count - 1;
-        var position = pointType.EndsWith("ENTER") ? method.Body?.StartToken.pos : 
-            pointType.EndsWith("EXIT") || pointType.EndsWith("EXIT00") ?
-            method.Body?.EndToken.pos : _returnStmts[returnIdx].Item1.StartToken.pos;
-        
+        var position = pointType.EndsWith("ENTER") ? method.Body?.StartToken.pos : method.Body?.EndToken.pos;
         var availableIdentifiers = identifierAvailability.Where(
             id => 
                 (position > id.AvailabilityStartPos && position <= id.AvailabilityEndPos) || 
@@ -266,49 +249,41 @@ public class DaikonInstrumenter(List<Identifier> identifierAvailability) : Visit
 
     private void AddMethodTracePoints(Method method) {
         // Add points at the method's entrance
-        var newStmts = AddMethodTracePoints(method, "ENTER");
+        var newStmts = AddMethodTracePoints(method, false);
         if (method.Body == null) {
             method.Body = new BlockStmt(method.Origin, newStmts);
         } else {
             method.Body.Body = newStmts.Concat(method.Body.Body).ToList();
         }
         // Add points at the method's exit(s)
-        if (method.Name == SnapshotGenerator.FaultyMethod?.Name) {
-            foreach (var ((rStmt, block), i) in _returnStmts.Select((e, i) => (e, i))) {
-                newStmts = AddMethodTracePoints(method, $"EXIT{i + 1}");
-                var idx = block.Body.IndexOf(rStmt);
-                block.Body.InsertRange(idx, newStmts);
-            }
+        newStmts = AddMethodTracePoints(method, true);
+        if (method != SnapshotGenerator.FaultyMethod || _lastStmtReturn == null) {
+            method.Body.Body.AddRange(newStmts);
+        } else {
+            var returnIdx = method.Body.Body.IndexOf(_lastStmtReturn);
+            method.Body.Body.InsertRange(returnIdx, newStmts);
         }
-        newStmts = AddMethodTracePoints(method, "EXIT00");
-        method.Body.Body.AddRange(newStmts);
     }
     
-    private List<Statement> AddMethodTracePoints(Method method, string ppt) {
+    private List<Statement> AddMethodTracePoints(Method method, bool isExit) {
         List<Statement> newStmts = [];
-        var programPoint = $"{method.FullSanitizedName}():::{ppt}\\n";
+        var type = isExit ? "EXIT00" : "ENTER";
+        var programPoint = $"{method.FullSanitizedName}():::{type}\\n";
         var declarationElement = AstUtils.CreateStringLiteral(method.Origin, programPoint);
         newStmts.Add(new PrintStmt(method.Origin, [declarationElement]));
 
         newStmts.AddRange(method == SnapshotGenerator.FaultyMethod
-            ? AddFaultyMethodVariableTracePoints(method, ppt)
-            : AddDummyMethodVariableTracePoints(method, ppt.StartsWith("EXIT")));
+            ? AddFaultyMethodVariableTracePoints(method, isExit)
+            : AddDummyMethodVariableTracePoints(method, isExit));
 
         var delimElement = AstUtils.CreateStringLiteral(method.Origin, "\\n");
         newStmts.Add(new PrintStmt(method.Origin, [delimElement]));
         return newStmts;
     }
 
-    private List<Statement> AddFaultyMethodVariableTracePoints(Method method, string pointType) {
+    private List<Statement> AddFaultyMethodVariableTracePoints(Method method, bool isExit) {
         List<Statement> newStmts = [];
-        var locationStartIndex = pointType.IndexOf("EXIT", StringComparison.Ordinal) + 7;
-        var returnIdx = locationStartIndex < pointType.Length && 
-            int.TryParse(pointType[locationStartIndex..], out var intVal) ? 
-            intVal - 1 : _returnStmts.Count - 1;
-        var position = pointType.EndsWith("ENTER") ? method.Body?.StartToken.pos : 
-            pointType.EndsWith("EXIT") || pointType.EndsWith("EXIT00") ?
-                method.Body?.EndToken.pos : _returnStmts[returnIdx].Item1.StartToken.pos;
-        
+        var position = isExit ? method.Body?.EndToken.pos : method.Body?.StartToken.pos;
         var availableIdentifiers = identifierAvailability.Where(
             id => 
                 (position > id.AvailabilityStartPos && position <= id.AvailabilityEndPos) || 
