@@ -18,6 +18,7 @@ public class SimplifyExpression
     private static List<Expression> _exprsNeedingNonZeroCheck = [];
     private static List<Expression> _exprsNeedingIndexInBoundsCheck = [];
     private static bool _isTopLevelExpr = true;
+    private static bool _isTopLevelForallExpr;
     private static bool _replaceArraySelectionWithMembership;
     private static Type? _sibblingNodeType;
     private static List<(Expression?, Type?)> _forallBoundVars = [];
@@ -71,8 +72,10 @@ public class SimplifyExpression
     
     public List<Expression?> ToExpression() {
         var prevIsTopLevelExpr = _isTopLevelExpr;
+        var prevIsTopLevelForallExpr = _isTopLevelForallExpr;
         _isTopLevelExpr = false;
         if (_t.Type == SimplifyToken.SimplifyTokenType.Forall) {
+            _isTopLevelForallExpr = true;
             _args.Select(arg => arg.ToExpression())
                 .SelectMany(exprList => exprList).ToList()
                 .ForEach(arg => _forallBoundVars.Add((arg, null)));
@@ -100,6 +103,7 @@ public class SimplifyExpression
         
         var argExprs = _args.Select(arg => arg.ToExpression()).SelectMany(exprList => exprList).ToList();
         _isTopLevelExpr = prevIsTopLevelExpr;
+        _isTopLevelForallExpr = prevIsTopLevelForallExpr;
         if (argExprs.Contains(null))
             return [null];
         var expr = _t.Type switch {
@@ -313,7 +317,8 @@ public class SimplifyExpression
             return array;
         }
         var selectExpr = new SeqSelectExpr(null, true, array, index, null);
-        _exprsNeedingIndexInBoundsCheck.Add(selectExpr);
+        if (!_isTopLevelForallExpr)
+            _exprsNeedingIndexInBoundsCheck.Add(selectExpr);
         AllGeneratedExprsTypes.Add((selectExpr, argType));
         return selectExpr;
     }
