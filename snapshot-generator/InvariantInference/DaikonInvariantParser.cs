@@ -9,8 +9,7 @@ public class DaikonInvariantParser : Visitor
     private readonly List<(Expression, int, Statement)> _invariantsPlacement = []; // (invariant, location, statement after which invariant should be inserted)
     private string _enclosingClassName = "";
     private BlockStmt? _currentBlock;
-    private readonly List<(ReturnStmt, int)> _returnStmts = []; // (return stmt, location)
-    private bool _isLastStmtReturn;
+    private (ReturnStmt?, int) _lastStmtReturn;
     private Predicate<Statement>? _findStmtPred;
     private Statement? _prevStmt;
     private (BlockStmt?, int) _targetStmt = (null, -1);
@@ -27,11 +26,8 @@ public class DaikonInvariantParser : Visitor
         foreach (var line in lines) {
             if (line.EndsWith(":::ENTER") || line.Contains(":::EXIT")) {
                 if (line.Contains(faultyMethod.Name) && line.Contains(_enclosingClassName)) {
-                    var locationStartIndex = line.IndexOf(":::EXIT", StringComparison.Ordinal) + 7;
-                    var returnIdx = int.TryParse(line[locationStartIndex..], out var intVal) ? intVal - 1 : _returnStmts.Count - 1;
                     location = line.EndsWith(":::ENTER") ? faultyMethod.Body.StartToken.pos : 
-                        (line.EndsWith(":::EXIT") || line.EndsWith(":::EXIT00")) && !_isLastStmtReturn ?
-                        faultyMethod.Body.EndToken.pos : _returnStmts[returnIdx].Item2;
+                        _lastStmtReturn.Item1 == null ? faultyMethod.Body.EndToken.pos : _lastStmtReturn.Item2;
                 } else if (line.Contains("Dummy")) {
                     var locationStartIndex = line.IndexOf("Dummy", StringComparison.Ordinal) + 5;
                     var locationEndIndex = line.EndsWith(":::ENTER") ? 10 : 9;
@@ -93,17 +89,17 @@ public class DaikonInvariantParser : Visitor
               method.EndToken.line >= SnapshotGenerator.ViolationLine))
             return;
         SnapshotGenerator.FaultyMethod = method;
+        if (method.Body is { Body.Count: > 0 } && method.Body.Body[^1] is ReturnStmt rStmt)
+            _lastStmtReturn = (rStmt, -1);
         base.HandleMethod(method);
-        if (method.Body is { Body.Count: > 0 } && method.Body.Body[^1] is ReturnStmt)
-            _isLastStmtReturn = true;
     }
     
     protected override void VisitStatement(ProduceStmt pStmt) {
-        if (pStmt is ReturnStmt retStmt && _returnStmts.All(rStmt => rStmt.Item1 != retStmt)) {
+        if (pStmt is ReturnStmt retStmt && _lastStmtReturn.Item1 != null && _lastStmtReturn.Item1 == retStmt) {
             if (_prevStmt != null) {
-                _returnStmts.Add((retStmt, _prevStmt.EndToken.pos));
+                _lastStmtReturn.Item2 = _prevStmt.EndToken.pos;
             } else if (_currentBlock != null) {
-                _returnStmts.Add((retStmt, _currentBlock.StartToken.pos));
+                _lastStmtReturn.Item2 = _currentBlock.StartToken.pos;
             }
         }
         base.VisitStatement(pStmt);
