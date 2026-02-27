@@ -1,3 +1,4 @@
+using Microsoft.BaseTypes;
 using Microsoft.Dafny;
 using Type = Microsoft.Dafny.Type;
 
@@ -14,6 +15,8 @@ public sealed class ExpressionTraceBuilder : Visitor
     private int? _currentExprAvailabilityScopeEnd;
     private bool _hasGhostChild;
     private bool _hasIdentifierChild;
+    
+    private ControlDependenceAnalyzer _cDepAnalyzer = new();
 
     public ExpressionTraceBuilder(List<Identifier> identifierAvailability, List<string> ghosts) {
         IdentifierAvailability = identifierAvailability;
@@ -40,13 +43,17 @@ public sealed class ExpressionTraceBuilder : Visitor
     }
     
     protected override void HandleBlock(BlockStmt blockStmt) {
+        var faultyMethod = SnapshotGenerator.FaultyMethod;
+        if (faultyMethod == null)
+            return;
+        
         var prevNewBlock = _newBlockBody;
         _newBlockBody = [];
-        InstrumentLine(blockStmt.StartToken);
+        InstrumentLine(blockStmt.StartToken, blockStmt);
         foreach (var stmt in blockStmt.Body) {
             _newBlockBody.Add(stmt);
             HandleStatement(stmt);
-            InstrumentLine(stmt.EndToken);
+            InstrumentLine(stmt.EndToken, stmt);
         }
         blockStmt.Body = _newBlockBody;
         _newBlockBody = prevNewBlock;
@@ -75,7 +82,7 @@ public sealed class ExpressionTraceBuilder : Visitor
     /// -------------------------
     /// Utils
     /// -------------------------
-    private void InstrumentLine(Token token) {
+    private void InstrumentLine(Token token, Statement placementRefStmt) {
         var availableExprs = _exprAvailabilityScope.Where(
             expr => 
                 (token.pos > expr.Item2 && token.pos < expr.Item3) || 
@@ -101,10 +108,13 @@ public sealed class ExpressionTraceBuilder : Visitor
             
             var posElement = Expression.CreateIntLiteral(token, token.pos);
             var exprStrElement = AstUtils.CreateStringLiteral(token, expr.Item1.ToString());
+            var snapshotCDep = _cDepAnalyzer.ComputeCDep(token.pos, placementRefStmt);
+            var snapshotCDepElement = Expression.CreateRealLiteral(null, BigDec.FromString($"{snapshotCDep}"));
             var delimElement1 = AstUtils.CreateStringLiteral(token, ",");
             var delimElement2 = AstUtils.CreateStringLiteral(token, "\\n");
             List<Expression> printElements = [
-                posElement, delimElement1, exprStrElement, delimElement1, safetyCheckedExpr ?? expr.Item1, delimElement2
+                posElement, delimElement1, exprStrElement, delimElement1, safetyCheckedExpr ?? expr.Item1, 
+                delimElement1, snapshotCDepElement, delimElement1, delimElement2
             ];
             var newStmt = new PrintStmt(token, printElements);
             _newBlockBody.Add(newStmt);

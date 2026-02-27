@@ -18,16 +18,18 @@ public sealed class ControlDependenceAnalyzer : Visitor
     public ControlDependenceAnalyzer() {
         var faultyMethod = SnapshotGenerator.FaultyMethod;
         if (faultyMethod?.Body == null) return;
+        var cloner = new Cloner();
+        _faultyMethodClone = new Method(cloner, faultyMethod);
         
         // find faulty location
-        if (SnapshotGenerator.ViolationLine <= faultyMethod.Body.StartToken.line)
-            _violationStmt = faultyMethod.Body;
-        HandleMethod(faultyMethod);
+        if (SnapshotGenerator.ViolationLine <= _faultyMethodClone.Body.StartToken.line)
+            _violationStmt = _faultyMethodClone.Body;
+        HandleMethod(_faultyMethodClone);
         _firstVisit = false;
         if (_violationStmt == null) return;
         // compute the control distance from each method location to the violation location
-        CDists.Add(_violationStmt, 0);
-        HandleMethod(faultyMethod);
+        CDists.TryAdd(_violationStmt, 0);
+        HandleMethod(_faultyMethodClone);
     }
 
     private void CheckForViolationStatement(Statement stmt) {
@@ -107,7 +109,7 @@ public sealed class ControlDependenceAnalyzer : Visitor
 
     private void InitializeViolationBlockCDists(List<Statement> blockBody) {
         foreach (var stmt in blockBody) {
-            CDists.Add(stmt, 0);
+            CDists.TryAdd(stmt, 0);
             HandleStatement(stmt);
         }
     }
@@ -124,7 +126,7 @@ public sealed class ControlDependenceAnalyzer : Visitor
             if (CDists.ContainsKey(currentStmt) || prevStmt == null || !CDists.ContainsKey(prevStmt))
                 continue;
             var prevStmtDist = CDists.First(stmt => stmt.Key == prevStmt).Value;
-            CDists.Add(currentStmt, prevStmtDist + 1);
+            CDists.TryAdd(currentStmt, prevStmtDist + 1);
         }
     }
 
@@ -201,5 +203,42 @@ public sealed class ControlDependenceAnalyzer : Visitor
             if (newPrevStmt != null) break;
         }
         return newPrevStmt;
+    }
+
+    /// -----
+    /// Utils
+    /// -----
+    public double ComputeCDep(int snapshotLocation, Statement placementRefStmt) {
+        // if (faultyMethod?.Body == null) return 0.0; // TODO: uncomment; maybe return 1?
+        if (_faultyMethodClone?.Body == null) return -1.0;
+        foreach (var (stmt, cDist) in CDists) {
+            if (stmt.EndToken.pos == snapshotLocation ||
+                (_faultyMethodClone.Body.EndToken.pos == snapshotLocation && stmt  == _faultyMethodClone.Body.Body[^1]))
+                return cDist;
+            switch (stmt) {
+                case BlockStmt bStmt when bStmt.StartToken.pos == snapshotLocation:
+                    return CDists.TryGetValue(bStmt.Body[0], out var value) ? value : cDist;
+                case IfStmt ifStmt when ifStmt.Thn.StartToken.pos == snapshotLocation:
+                    return CDists.TryGetValue(ifStmt.Thn.Body[0], out value) ? value : cDist;
+                case IfStmt ifStmt when (ifStmt.Els is BlockStmt els && ifStmt.Els?.StartToken.pos == snapshotLocation):
+                    return CDists.TryGetValue(els.Body[0], out value) ? value : cDist;
+                case OneBodyLoopStmt loopStmt when loopStmt.Body.StartToken.pos == snapshotLocation:
+                    return CDists.TryGetValue(loopStmt.Body.Body[0], out value) ? value : cDist;
+            }
+            if (_faultyMethodClone.Body.StartToken.pos == snapshotLocation && stmt == _faultyMethodClone.Body.Body[0])
+                return cDist + 1;
+
+            Statement? prevStmt = placementRefStmt;
+            var beforeViolationStmt = _violationStmt != null && snapshotLocation < _violationStmt.EndToken.pos;
+            while (prevStmt != null) {
+                prevStmt = DeterminePrevStmt(prevStmt, beforeViolationStmt);
+                if (prevStmt != null && CDists.TryGetValue(prevStmt, out var prevStmtCDist))
+                    return prevStmtCDist;
+            }
+        }
+        
+        // return 0.0; // TODO: uncomment; maybe return 1?
+        // TODO: normalize
+        return -1.0;
     }
 }

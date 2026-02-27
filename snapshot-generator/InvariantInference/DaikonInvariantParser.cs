@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Microsoft.BaseTypes;
 using Microsoft.Dafny;
 
 namespace SnapshotGenerator.InvariantInference;
@@ -13,6 +14,8 @@ public class DaikonInvariantParser : Visitor
     private Predicate<Statement>? _findStmtPred;
     private Statement? _prevStmt;
     private (BlockStmt?, int) _targetStmt = (null, -1);
+
+    private ControlDependenceAnalyzer _cDepAnalyzer = new();
     
     public void Parse(ModuleDefinition module) {
         Visit(module);
@@ -20,6 +23,7 @@ public class DaikonInvariantParser : Visitor
             return;
         var faultyMethod = SnapshotGenerator.FaultyMethod;
         if (faultyMethod.Body == null) return;
+        _cDepAnalyzer = new ControlDependenceAnalyzer();
 
         int location = module.StartToken.pos;
         var lines = File.ReadAllLines("inv.inv");
@@ -200,29 +204,32 @@ public class DaikonInvariantParser : Visitor
         foreach (var (inv, location, placement) in _invariantsPlacement) {
             if (ReferenceEquals(placement, faultyMethod.Body)) {
                 if (location == faultyMethod.Body.StartToken.pos) {
-                    faultyMethod.Body.Body.Insert(0, PrintInvariant(inv, location));
+                    faultyMethod.Body.Body.Insert(0, PrintInvariant(inv, location, placement));
                 } else {
-                    faultyMethod.Body.Body.Add(PrintInvariant(inv, location));
+                    faultyMethod.Body.Body.Add(PrintInvariant(inv, location, placement));
                 }
             } else {
                 _findStmtPred = stmt => ReferenceEquals(stmt, placement);
                 HandleMethod(faultyMethod);
                 if (_targetStmt.Item1 == null)
                     continue;
-                _targetStmt.Item1.Body.Insert(_targetStmt.Item2 + 1, PrintInvariant(inv, location));
+                _targetStmt.Item1.Body.Insert(_targetStmt.Item2 + 1, PrintInvariant(inv, location, placement));
                 _findStmtPred = null;
                 _targetStmt = (null, -1);
             }
         }
     }
 
-    private PrintStmt PrintInvariant(Expression invariantExpr, int location) {
+    private PrintStmt PrintInvariant(Expression invariantExpr, int location, Statement placementRefStmt) {
         var posElement = Expression.CreateIntLiteral(null, location);
         var exprStrElement = AstUtils.CreateStringLiteral(null, invariantExpr.ToString());
+        var snapshotCDep = _cDepAnalyzer.ComputeCDep(location, placementRefStmt);
+        var snapshotCDepElement = Expression.CreateRealLiteral(null, BigDec.FromString($"{snapshotCDep}"));
         var delimElement1 = AstUtils.CreateStringLiteral(null, ",");
         var delimElement2 = AstUtils.CreateStringLiteral(null, "\\n");
         List<Expression> printElements = [
-            posElement, delimElement1, exprStrElement, delimElement1, invariantExpr, delimElement2
+            posElement, delimElement1, exprStrElement, delimElement1, invariantExpr, 
+            delimElement1, snapshotCDepElement, delimElement1, delimElement2
         ];
         return new PrintStmt(null, printElements); 
     }
