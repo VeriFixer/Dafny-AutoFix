@@ -29,7 +29,7 @@ def compute_invariant_difference(passing_invs, failing_invs):
         location_invs = []
 
         for inv in invs:
-            if inv not in passing_invs[location]:
+            if location not in passing_invs.keys() or inv not in passing_invs[location]:
                 location_invs.append(inv)
         filtered_invs[location] = location_invs
 
