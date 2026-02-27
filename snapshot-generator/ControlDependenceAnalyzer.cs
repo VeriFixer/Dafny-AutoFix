@@ -13,6 +13,7 @@ public sealed class ControlDependenceAnalyzer : Visitor
     private bool _beforeViolationStmt;
     private Statement? _prevStmt;
     private BlockStmt? _outerBlockWithViolationStmt;
+    private readonly Method? _faultyMethodClone;
 
     public ControlDependenceAnalyzer() {
         var faultyMethod = SnapshotGenerator.FaultyMethod;
@@ -71,7 +72,7 @@ public sealed class ControlDependenceAnalyzer : Visitor
         
         if (_visitingBlockWithViolationStmt) { // inside sub-blocks of the violation block
             ComputeCDists(blockStmt.Body, _beforeViolationStmt);
-            ComputeSubBlockCDists(blockStmt.Body, _beforeViolationStmt ? blockStmt.Body.Count + 1 : -1);
+            ComputeSubBlockCDists(blockStmt, _beforeViolationStmt ? blockStmt.Body.Count + 1 : -1);
         }
         
         var violationStmtIdx = blockStmt.Body.IndexOf(_violationStmt);
@@ -79,7 +80,7 @@ public sealed class ControlDependenceAnalyzer : Visitor
             _outerBlockWithViolationStmt = blockStmt;
             _visitingBlockWithViolationStmt = true;
             ComputeCDists(blockStmt.Body, violationStmtIdx);
-            ComputeSubBlockCDists(blockStmt.Body, violationStmtIdx);
+            ComputeSubBlockCDists(blockStmt, violationStmtIdx);
         }
         
         if (!_visitingViolationBlockStmt && !_visitingBlockWithViolationStmt && violationStmtIdx == -1) { // outside of block containing violation location
@@ -92,7 +93,7 @@ public sealed class ControlDependenceAnalyzer : Visitor
             } else {
                 ComputeCDists(blockStmt.Body, _beforeViolationStmt);
             }
-            ComputeSubBlockCDists(blockStmt.Body, 
+            ComputeSubBlockCDists(blockStmt, 
                 violationBlockIdx != -1 ? violationBlockIdx : 
                 _beforeViolationStmt ? blockStmt.Body.Count + 1 : -1);
             if (violationBlockIdx != -1)
@@ -105,8 +106,10 @@ public sealed class ControlDependenceAnalyzer : Visitor
     }
 
     private void InitializeViolationBlockCDists(List<Statement> blockBody) {
-        foreach (var stmt in blockBody)
+        foreach (var stmt in blockBody) {
             CDists.Add(stmt, 0);
+            HandleStatement(stmt);
+        }
     }
 
     private void ComputeCDists(List<Statement> blockBody, bool beforeViolationStmt) {
@@ -141,17 +144,20 @@ public sealed class ControlDependenceAnalyzer : Visitor
         ComputeCDists(blockBody[blockDivider..], false);
     }
     
-    private void ComputeSubBlockCDists(List<Statement> blockBody, int violationStmtIdx) {
-        foreach (var (stmt, i) in blockBody.Select((stmt, i) => (stmt, i))) {
+    private void ComputeSubBlockCDists(BlockStmt blockStmt, int violationStmtIdx) {
+        foreach (var (stmt, i) in blockStmt.Body.Select((stmt, i) => (stmt, i))) {
             if (!(stmt is BlockStmt || stmt is IfStmt || stmt is LoopStmt || stmt is AlternativeStmt || 
                   stmt is MatchStmt || stmt is NestedMatchStmt) || stmt.SubStatements.Contains(_outerBlockWithViolationStmt))
                 continue;
             _beforeViolationStmt = i < violationStmtIdx;
-            _prevStmt = _beforeViolationStmt && i < blockBody.Count - 1 ? 
-                DeterminePrevStmt(blockBody[i + 1], _beforeViolationStmt) :
-                i > 0 ? DeterminePrevStmt(blockBody[i - 1], _beforeViolationStmt) : stmt;
+            _prevStmt = _beforeViolationStmt ? 
+                i < blockStmt.Body.Count - 1 ? 
+                    DeterminePrevStmt(blockStmt.Body[i + 1], _beforeViolationStmt) : stmt :
+                i > 0 ? DeterminePrevStmt(blockStmt.Body[i - 1], _beforeViolationStmt) : stmt;
             HandleStatement(stmt);
         }
+        if (!CDists.ContainsKey(blockStmt) && CDists.TryGetValue(blockStmt.Body[0], out var value))
+            CDists.Add(blockStmt, value);
     }
 
     private Statement? DeterminePrevStmt(Statement? prevStmt, bool before) {
