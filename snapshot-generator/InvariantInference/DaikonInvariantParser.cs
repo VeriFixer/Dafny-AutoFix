@@ -224,7 +224,7 @@ public class DaikonInvariantParser : Visitor
         var posElement = Expression.CreateIntLiteral(null, location);
         var exprStrElement = AstUtils.CreateStringLiteral(null, invariantExpr.ToString());
         var snapshotCDep = _cDepAnalyzer.ComputeCDep(location, placementRefStmt);
-        var snapshotCDepElement = Expression.CreateRealLiteral(null, BigDec.FromString($"{snapshotCDep}"));
+        var snapshotCDepElement = Expression.CreateRealLiteral(null, BigDec.FromString($"{snapshotCDep}".Replace(',', '.')));
         var delimElement1 = AstUtils.CreateStringLiteral(null, ",");
         var delimElement2 = AstUtils.CreateStringLiteral(null, "\\n");
         List<Expression> printElements = [

@@ -4,7 +4,7 @@ namespace SnapshotGenerator;
 
 public sealed class ControlDependenceAnalyzer : Visitor
 {
-    public Dictionary<Statement, int> CDists = [];
+    public readonly Dictionary<Statement, int> CDists = [];
     private Statement? _violationStmt;
     private readonly bool _firstVisit = true;
     private bool _visitingViolationBlockStmt;
@@ -209,36 +209,34 @@ public sealed class ControlDependenceAnalyzer : Visitor
     /// Utils
     /// -----
     public double ComputeCDep(int snapshotLocation, Statement placementRefStmt) {
-        // if (faultyMethod?.Body == null) return 0.0; // TODO: uncomment; maybe return 1?
-        if (_faultyMethodClone?.Body == null) return -1.0;
+        if (_faultyMethodClone?.Body == null) return 0.0;
+        var maxDist = (double)CDists.Values.Max();
+        
         foreach (var (stmt, cDist) in CDists) {
             if (stmt.EndToken.pos == snapshotLocation ||
                 (_faultyMethodClone.Body.EndToken.pos == snapshotLocation && stmt  == _faultyMethodClone.Body.Body[^1]))
-                return cDist;
+                return maxDist != 0.0 ? 1 - cDist / maxDist : 0.0;
             switch (stmt) {
                 case BlockStmt bStmt when bStmt.StartToken.pos == snapshotLocation:
-                    return CDists.TryGetValue(bStmt.Body[0], out var value) ? value : cDist;
+                    return maxDist != 0.0 ? 1 - (CDists.TryGetValue(bStmt.Body[0], out var value) ? value : cDist) / maxDist : 0.0;
                 case IfStmt ifStmt when ifStmt.Thn.StartToken.pos == snapshotLocation:
-                    return CDists.TryGetValue(ifStmt.Thn.Body[0], out value) ? value : cDist;
-                case IfStmt ifStmt when (ifStmt.Els is BlockStmt els && ifStmt.Els?.StartToken.pos == snapshotLocation):
-                    return CDists.TryGetValue(els.Body[0], out value) ? value : cDist;
+                    return maxDist != 0.0 ? 1 - (CDists.TryGetValue(ifStmt.Thn.Body[0], out value) ? value : cDist) / maxDist : 0.0;
+                case IfStmt { Els: BlockStmt els } ifStmt when (ifStmt.Els?.StartToken.pos == snapshotLocation):
+                    return maxDist != 0.0 ? 1 - (CDists.TryGetValue(els.Body[0], out value) ? value : cDist) / maxDist : 0.0;
                 case OneBodyLoopStmt loopStmt when loopStmt.Body.StartToken.pos == snapshotLocation:
-                    return CDists.TryGetValue(loopStmt.Body.Body[0], out value) ? value : cDist;
+                    return maxDist != 0.0 ? 1 - (CDists.TryGetValue(loopStmt.Body.Body[0], out value) ? value : cDist) / maxDist : 0.0;
             }
             if (_faultyMethodClone.Body.StartToken.pos == snapshotLocation && stmt == _faultyMethodClone.Body.Body[0])
-                return cDist + 1;
+                return maxDist != 0.0 ? 1 - (cDist + 1) / maxDist : 0.0;
 
             Statement? prevStmt = placementRefStmt;
             var beforeViolationStmt = _violationStmt != null && snapshotLocation < _violationStmt.EndToken.pos;
             while (prevStmt != null) {
                 prevStmt = DeterminePrevStmt(prevStmt, beforeViolationStmt);
                 if (prevStmt != null && CDists.TryGetValue(prevStmt, out var prevStmtCDist))
-                    return prevStmtCDist;
+                    return maxDist != 0.0 ? 1 - prevStmtCDist / maxDist : 0.0;
             }
         }
-        
-        // return 0.0; // TODO: uncomment; maybe return 1?
-        // TODO: normalize
-        return -1.0;
+        return 0.0;
     }
 }
