@@ -47,7 +47,6 @@ verify_program() {
 infer_invariants() {
     local passing="$1"
     local violation_line="$2"
-    local violation_col="$3"
 
     passing_str=""
     inv_type_arg=""
@@ -67,7 +66,7 @@ infer_invariants() {
 
     echo "Generating invariants for $passing_str tests"
     dotnet ./dafny/Binaries/Dafny.dll run "$PROGRAM" \
-        --plugin $PLUGIN,"$violation_line $violation_col $inv_type_arg" \
+        --plugin $PLUGIN,"$inv_type_arg $violation_line" \
         --no-verify --allow-warnings > "$trace_output_file"
 
     sed -i '' '1,2d' "$trace_output_file" # remove output relative to verification
@@ -77,7 +76,7 @@ infer_invariants() {
 generate_snapshots() {
     local enumeration="$1"
     local violation_line="$2"
-    local violation_col="$3"
+    local related_location_line="$3"
 
     enumeration_str=""
     gen_type_arg=""
@@ -94,7 +93,7 @@ generate_snapshots() {
 
     echo "Generating snapshots via $enumeration_str"
     dotnet ./dafny/Binaries/Dafny.dll run "$PROGRAM" \
-        --plugin $PLUGIN,"$violation_line $violation_col $gen_type_arg" \
+        --plugin $PLUGIN,"$gen_type_arg $violation_line $related_location_line" \
         --no-verify --allow-warnings > "$snapshot_output_file"
     sed -i '' '1,2d' "$snapshot_output_file" # remove output relative to verification
 }
@@ -116,19 +115,22 @@ violation=$(echo "$output" | grep "Error: a precondition\|Error: a postcondition
 echo -e "$violation\n"
 violation_location=$(echo "$violation" | grep -o "(.*,.*)")
 violation_line=$(echo $violation_location | grep -o '[0-9]*' | awk 'NR==1')
-violation_col=$(echo $violation_location | grep -o '[0-9]*' | awk 'NR==2')
+related_location=$(echo "$output" | grep "Related location:")
+echo -e "$related_location\n"
+related_location=$(echo "$related_location" | grep -o "(.*,.*)")
+related_location_line=$(echo $related_location | grep -o '[0-9]*' | awk 'NR==1')
 
 # Generate passing and failing invariants
 
-echo "$(infer_invariants true $violation_line $violation_col)"
-echo -e "$(infer_invariants false $violation_line $violation_col)\n"
+echo "$(infer_invariants true $violation_line)"
+echo -e "$(infer_invariants false $violation_line)\n"
 # Filter invariants: we are interested in failing invariants that are not passing
 python3 filter-invs.py
 
 # Generate snapshots via enumeration and invariants
 
-echo "$(generate_snapshots true $violation_line $violation_col)"
-echo -e "$(generate_snapshots false $violation_line $violation_col)\n"
+echo "$(generate_snapshots true $violation_line $related_location_line)"
+echo -e "$(generate_snapshots false $violation_line $related_location_line)\n"
 
 # Compute the suspiciousness score of each snapshot
 echo "Computing suspiciousness scores"

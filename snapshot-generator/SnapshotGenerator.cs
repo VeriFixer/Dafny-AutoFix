@@ -9,7 +9,7 @@ namespace SnapshotGenerator;
 public class SnapshotGenerator : PluginConfiguration
 {
     public static int ViolationLine { get; private set; }
-    public static int ViolationColumn { get; private set; }
+    public static int? RelatedLocationLine { get; private set; }
     public static bool DebugMode { get; private set; }
     private bool _enumeration;
     private bool _invariantInference;
@@ -23,26 +23,27 @@ public class SnapshotGenerator : PluginConfiguration
     public static Method? FailingTestsMethod { get; set; }
     
     public override void ParseArguments(string[] args) {
-        if (args.Length < 3) return;
-        ViolationLine = int.Parse(args[0]);
-        ViolationColumn = int.Parse(args[1]);
-        if (args[2] == "enum") {
+        if (args.Length < 2) return;
+        if (args[0] == "enum") {
             _enumeration = true;
-        } else if (args[2] == "inv_pass" || args[2] == "inv_fail" || args[2] == "inv_all") { 
+        } else if (args[0] == "inv_pass" || args[0] == "inv_fail" || args[0] == "inv_all") { 
             _invariantInference = true;
-            if (args[2] == "inv_pass")
+            if (args[0] == "inv_pass")
                 _passingInvariantInference = true;
-            if (args[2] == "inv_fail")
+            if (args[0] == "inv_fail")
                 _failingInvariantInference = true;
-            if (args[2] == "inv_all") {
+            if (args[0] == "inv_all") {
                 _passingInvariantInference = true;
                 _failingInvariantInference = true;
             }
-        } else if (args[2] == "inv") {
+        } else if (args[0] == "inv") {
             _invariantParsing = true;
         }
+        ViolationLine = int.Parse(args[1]);
+        if (args.Length > 2 && int.TryParse(args[2], out var arg))
+            RelatedLocationLine = arg;
         
-        if (args.Length == 4 && args[3] == "debug")
+        if (args is [_, _, "debug"] or [_, _, _, "debug"])
             DebugMode = true;
     }
     
