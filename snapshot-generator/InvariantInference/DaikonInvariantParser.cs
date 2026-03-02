@@ -15,7 +15,8 @@ public class DaikonInvariantParser : Visitor
     private Statement? _prevStmt;
     private (BlockStmt?, int) _targetStmt = (null, -1);
 
-    private ControlDependenceAnalyzer _cDepAnalyzer = new();
+    private ControlDependenceAnalyzer? _cDepAnalyzer;
+    private ExpressionDependenceAnalyzer? _eDepAnalyzer;
     
     public void Parse(ModuleDefinition module) {
         Visit(module);
@@ -45,6 +46,8 @@ public class DaikonInvariantParser : Visitor
             }
         }
         InstrumentWithInvariants();
+        _eDepAnalyzer = new ExpressionDependenceAnalyzer(module, 
+            _invariantsPlacement.Select(i => i.Item1).ToList());
         InvariantParser.InvariantsAlreadyParsed = true;
     }
 
@@ -223,7 +226,7 @@ public class DaikonInvariantParser : Visitor
     private PrintStmt PrintInvariant(Expression invariantExpr, int location, Statement placementRefStmt) {
         var posElement = Expression.CreateIntLiteral(null, location);
         var exprStrElement = AstUtils.CreateStringLiteral(null, invariantExpr.ToString());
-        var snapshotCDep = _cDepAnalyzer.ComputeCDep(location, placementRefStmt);
+        var snapshotCDep = _cDepAnalyzer?.ComputeCDep(location, placementRefStmt) ?? 0.0;
         var snapshotCDepElement = Expression.CreateRealLiteral(null, BigDec.FromString($"{snapshotCDep}".Replace(',', '.')));
         var delimElement1 = AstUtils.CreateStringLiteral(null, ",");
         var delimElement2 = AstUtils.CreateStringLiteral(null, "\\n");

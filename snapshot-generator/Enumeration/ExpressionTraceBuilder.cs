@@ -16,9 +16,10 @@ public sealed class ExpressionTraceBuilder : Visitor
     private bool _hasGhostChild;
     private bool _hasIdentifierChild;
     
-    private ControlDependenceAnalyzer _cDepAnalyzer = new();
+    private readonly ControlDependenceAnalyzer _cDepAnalyzer;
+    private ExpressionDependenceAnalyzer _eDepAnalyzer;
 
-    public ExpressionTraceBuilder(List<Identifier> identifierAvailability, List<string> ghosts) {
+    public ExpressionTraceBuilder(ModuleDefinition module, List<Identifier> identifierAvailability, List<string> ghosts) {
         IdentifierAvailability = identifierAvailability;
         Ghosts = ghosts;
         _exprAvailabilityScope = [];
@@ -32,6 +33,10 @@ public sealed class ExpressionTraceBuilder : Visitor
             _hasGhostChild = false;
             _hasIdentifierChild = false;
         }
+        
+        _cDepAnalyzer = new ControlDependenceAnalyzer();
+        _eDepAnalyzer = new ExpressionDependenceAnalyzer(module,
+            _exprAvailabilityScope.Select(e => e.Item1).ToList());
     }
     
     public void InstrumentFaultyMethod() {

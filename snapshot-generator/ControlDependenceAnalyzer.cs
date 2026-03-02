@@ -4,7 +4,7 @@ namespace SnapshotGenerator;
 
 public sealed class ControlDependenceAnalyzer : Visitor
 {
-    public readonly Dictionary<Statement, int> CDists = [];
+    private readonly Dictionary<Statement, int> _cDists = [];
     private Statement? _violationStmt;
     private readonly bool _firstVisit = true;
     private bool _visitingViolationBlockStmt;
@@ -28,7 +28,7 @@ public sealed class ControlDependenceAnalyzer : Visitor
         _firstVisit = false;
         if (_violationStmt == null) return;
         // compute the control distance from each method location to the violation location
-        CDists.TryAdd(_violationStmt, 0);
+        _cDists.TryAdd(_violationStmt, 0);
         HandleMethod(_faultyMethodClone);
     }
 
@@ -109,7 +109,7 @@ public sealed class ControlDependenceAnalyzer : Visitor
 
     private void InitializeViolationBlockCDists(List<Statement> blockBody) {
         foreach (var stmt in blockBody) {
-            CDists.TryAdd(stmt, 0);
+            _cDists.TryAdd(stmt, 0);
             HandleStatement(stmt);
         }
     }
@@ -123,10 +123,10 @@ public sealed class ControlDependenceAnalyzer : Visitor
             var prevStmtIdx = beforeViolationStmt ? i + 1 : i - 1;
             var prevStmt = prevStmtIdx >= 0 && prevStmtIdx < blockBody.Count ? blockBody[prevStmtIdx] : _prevStmt;
             i = beforeViolationStmt ? i - 1 : i + 1;
-            if (CDists.ContainsKey(currentStmt) || prevStmt == null || !CDists.ContainsKey(prevStmt))
+            if (_cDists.ContainsKey(currentStmt) || prevStmt == null || !_cDists.ContainsKey(prevStmt))
                 continue;
-            var prevStmtDist = CDists.First(stmt => stmt.Key == prevStmt).Value;
-            CDists.TryAdd(currentStmt, prevStmtDist + 1);
+            var prevStmtDist = _cDists.First(stmt => stmt.Key == prevStmt).Value;
+            _cDists.TryAdd(currentStmt, prevStmtDist + 1);
         }
     }
 
@@ -158,13 +158,13 @@ public sealed class ControlDependenceAnalyzer : Visitor
                 i > 0 ? DeterminePrevStmt(blockStmt.Body[i - 1], _beforeViolationStmt) : stmt;
             HandleStatement(stmt);
         }
-        if (!CDists.ContainsKey(blockStmt) && CDists.TryGetValue(blockStmt.Body[0], out var value))
-            CDists.Add(blockStmt, value);
+        if (!_cDists.ContainsKey(blockStmt) && _cDists.TryGetValue(blockStmt.Body[0], out var value))
+            _cDists.Add(blockStmt, value);
     }
 
     private Statement? DeterminePrevStmt(Statement? prevStmt, bool before) {
         if (prevStmt == null) return null;
-        if (CDists.ContainsKey(prevStmt))
+        if (_cDists.ContainsKey(prevStmt))
             return prevStmt;
         if (!(prevStmt is BlockStmt || prevStmt is IfStmt || prevStmt is LoopStmt ||
               prevStmt is AlternativeStmt || prevStmt is MatchStmt || prevStmt is NestedMatchStmt))
@@ -210,21 +210,21 @@ public sealed class ControlDependenceAnalyzer : Visitor
     /// -----
     public double ComputeCDep(int snapshotLocation, Statement placementRefStmt) {
         if (_faultyMethodClone?.Body == null) return 0.0;
-        var maxDist = (double)CDists.Values.Max();
+        var maxDist = (double)_cDists.Values.Max();
         
-        foreach (var (stmt, cDist) in CDists) {
+        foreach (var (stmt, cDist) in _cDists) {
             if (stmt.EndToken.pos == snapshotLocation ||
                 (_faultyMethodClone.Body.EndToken.pos == snapshotLocation && stmt  == _faultyMethodClone.Body.Body[^1]))
                 return maxDist != 0.0 ? 1 - cDist / maxDist : 0.0;
             switch (stmt) {
                 case BlockStmt bStmt when bStmt.StartToken.pos == snapshotLocation:
-                    return maxDist != 0.0 ? 1 - (CDists.TryGetValue(bStmt.Body[0], out var value) ? value : cDist) / maxDist : 0.0;
+                    return maxDist != 0.0 ? 1 - (_cDists.TryGetValue(bStmt.Body[0], out var value) ? value : cDist) / maxDist : 0.0;
                 case IfStmt ifStmt when ifStmt.Thn.StartToken.pos == snapshotLocation:
-                    return maxDist != 0.0 ? 1 - (CDists.TryGetValue(ifStmt.Thn.Body[0], out value) ? value : cDist) / maxDist : 0.0;
+                    return maxDist != 0.0 ? 1 - (_cDists.TryGetValue(ifStmt.Thn.Body[0], out value) ? value : cDist) / maxDist : 0.0;
                 case IfStmt { Els: BlockStmt els } ifStmt when (ifStmt.Els?.StartToken.pos == snapshotLocation):
-                    return maxDist != 0.0 ? 1 - (CDists.TryGetValue(els.Body[0], out value) ? value : cDist) / maxDist : 0.0;
+                    return maxDist != 0.0 ? 1 - (_cDists.TryGetValue(els.Body[0], out value) ? value : cDist) / maxDist : 0.0;
                 case OneBodyLoopStmt loopStmt when loopStmt.Body.StartToken.pos == snapshotLocation:
-                    return maxDist != 0.0 ? 1 - (CDists.TryGetValue(loopStmt.Body.Body[0], out value) ? value : cDist) / maxDist : 0.0;
+                    return maxDist != 0.0 ? 1 - (_cDists.TryGetValue(loopStmt.Body.Body[0], out value) ? value : cDist) / maxDist : 0.0;
             }
             if (_faultyMethodClone.Body.StartToken.pos == snapshotLocation && stmt == _faultyMethodClone.Body.Body[0])
                 return maxDist != 0.0 ? 1 - (cDist + 1) / maxDist : 0.0;
@@ -233,7 +233,7 @@ public sealed class ControlDependenceAnalyzer : Visitor
             var beforeViolationStmt = _violationStmt != null && snapshotLocation < _violationStmt.EndToken.pos;
             while (prevStmt != null) {
                 prevStmt = DeterminePrevStmt(prevStmt, beforeViolationStmt);
-                if (prevStmt != null && CDists.TryGetValue(prevStmt, out var prevStmtCDist))
+                if (prevStmt != null && _cDists.TryGetValue(prevStmt, out var prevStmtCDist))
                     return maxDist != 0.0 ? 1 - prevStmtCDist / maxDist : 0.0;
             }
         }

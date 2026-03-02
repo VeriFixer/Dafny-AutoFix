@@ -81,7 +81,7 @@ public class Enumerator(ErrorReporter reporter) : Rewriter(reporter)
         scanner.VisitFaultyMethod();
 
         // instrument the program for collecting predicates values at runtime
-        var expressionTraceBuilder = new ExpressionTraceBuilder(scanner.IdentifierAvailability, scanner.Ghosts);
+        var expressionTraceBuilder = new ExpressionTraceBuilder(module, scanner.IdentifierAvailability, scanner.Ghosts);
         expressionTraceBuilder.InstrumentFaultyMethod();
     }
     
