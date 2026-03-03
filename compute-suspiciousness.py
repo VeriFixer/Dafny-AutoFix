@@ -14,7 +14,7 @@ def read_snapshots(enumeration):
                 current_test_case_snapshots = set()
             elif passing != None:
                 collection = pass_snapshots if passing else fail_snapshots
-                snapshot = tuple(line.strip().split(','))
+                snapshot = tuple(line.strip().split(';'))
                 if snapshot in current_test_case_snapshots:
                     continue
                 current_test_case_snapshots.add(snapshot)

@@ -117,7 +117,7 @@ public sealed class ExpressionTraceBuilder : Visitor
             var snapshotCDepElement = Expression.CreateRealLiteral(null, BigDec.FromString($"{snapshotCDep}".Replace(',', '.')));
             var snapshotEDep = _eDepAnalyzer.ComputeEDep(expr.Item1);
             var snapshotEDepElement = Expression.CreateRealLiteral(null, BigDec.FromString($"{snapshotEDep}".Replace(',', '.')));
-            var delimElement1 = AstUtils.CreateStringLiteral(token, ",");
+            var delimElement1 = AstUtils.CreateStringLiteral(token, ";");
             var delimElement2 = AstUtils.CreateStringLiteral(token, "\\n");
             List<Expression> printElements = [
                 posElement, delimElement1, exprStrElement, delimElement1, safetyCheckedExpr ?? expr.Item1, 
