@@ -47,10 +47,19 @@ public sealed class ExpressionDependenceAnalyzer : Visitor
 
     private HashSet<string> GetSubExpressions(Expression pred) {
         var subExprs = new HashSet<string>();
-        foreach (var expr in pred.SubExpressions) {
-            subExprs.Add(expr.ToString());
+        subExprs.Add(pred.ToString());
+        foreach (var expr in pred.SubExpressions)
             subExprs.UnionWith(GetSubExpressions(expr));
-        }
         return subExprs;
+    }
+
+    /// -----
+    /// Utils
+    /// -----
+    public double ComputeEDep(Expression pred) {
+        var maxDist = (double)_eProxs.Values.Max();
+        if (_eProxs.ContainsKey(pred.ToString()))
+            return _eProxs[pred.ToString()] / maxDist;
+        return 0.0;
     }
 }

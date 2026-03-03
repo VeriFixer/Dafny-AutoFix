@@ -24,7 +24,6 @@ public class DaikonInvariantParser : Visitor
             return;
         var faultyMethod = SnapshotGenerator.FaultyMethod;
         if (faultyMethod.Body == null) return;
-        _cDepAnalyzer = new ControlDependenceAnalyzer();
 
         int location = module.StartToken.pos;
         var lines = File.ReadAllLines("inv.inv");
@@ -45,9 +44,11 @@ public class DaikonInvariantParser : Visitor
                 FindInvariantPlacement(location, invExpr);
             }
         }
-        InstrumentWithInvariants();
+        
+        _cDepAnalyzer = new ControlDependenceAnalyzer();
         _eDepAnalyzer = new ExpressionDependenceAnalyzer(module, 
             _invariantsPlacement.Select(i => i.Item1).ToList());
+        InstrumentWithInvariants();
         InvariantParser.InvariantsAlreadyParsed = true;
     }
 
@@ -228,11 +229,13 @@ public class DaikonInvariantParser : Visitor
         var exprStrElement = AstUtils.CreateStringLiteral(null, invariantExpr.ToString());
         var snapshotCDep = _cDepAnalyzer?.ComputeCDep(location, placementRefStmt) ?? 0.0;
         var snapshotCDepElement = Expression.CreateRealLiteral(null, BigDec.FromString($"{snapshotCDep}".Replace(',', '.')));
+        var snapshotEDep = _eDepAnalyzer?.ComputeEDep(invariantExpr) ?? 0.0;
+        var snapshotEDepElement = Expression.CreateRealLiteral(null, BigDec.FromString($"{snapshotEDep}".Replace(',', '.')));
         var delimElement1 = AstUtils.CreateStringLiteral(null, ",");
         var delimElement2 = AstUtils.CreateStringLiteral(null, "\\n");
         List<Expression> printElements = [
-            posElement, delimElement1, exprStrElement, delimElement1, invariantExpr, 
-            delimElement1, snapshotCDepElement, delimElement1, delimElement2
+            posElement, delimElement1, exprStrElement, delimElement1, invariantExpr, delimElement1, 
+            snapshotCDepElement, delimElement1, snapshotEDepElement, delimElement2
         ];
         return new PrintStmt(null, printElements); 
     }
