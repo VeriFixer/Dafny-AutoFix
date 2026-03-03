@@ -215,26 +215,26 @@ public sealed class ControlDependenceAnalyzer : Visitor
         foreach (var (stmt, cDist) in _cDists) {
             if (stmt.EndToken.pos == snapshotLocation ||
                 (_faultyMethodClone.Body.EndToken.pos == snapshotLocation && stmt  == _faultyMethodClone.Body.Body[^1]))
-                return maxDist != 0.0 ? 1 - cDist / maxDist : 0.0;
+                return maxDist != 0.0 ? 1 - cDist / maxDist : 1.0;
             switch (stmt) {
                 case BlockStmt bStmt when bStmt.StartToken.pos == snapshotLocation:
-                    return maxDist != 0.0 ? 1 - (_cDists.TryGetValue(bStmt.Body[0], out var value) ? value : cDist) / maxDist : 0.0;
+                    return maxDist != 0.0 ? 1 - (_cDists.TryGetValue(bStmt.Body[0], out var value) ? value : cDist) / maxDist : 1.0;
                 case IfStmt ifStmt when ifStmt.Thn.StartToken.pos == snapshotLocation:
-                    return maxDist != 0.0 ? 1 - (_cDists.TryGetValue(ifStmt.Thn.Body[0], out value) ? value : cDist) / maxDist : 0.0;
+                    return maxDist != 0.0 ? 1 - (_cDists.TryGetValue(ifStmt.Thn.Body[0], out value) ? value : cDist) / maxDist : 1.0;
                 case IfStmt { Els: BlockStmt els } ifStmt when (ifStmt.Els?.StartToken.pos == snapshotLocation):
-                    return maxDist != 0.0 ? 1 - (_cDists.TryGetValue(els.Body[0], out value) ? value : cDist) / maxDist : 0.0;
+                    return maxDist != 0.0 ? 1 - (_cDists.TryGetValue(els.Body[0], out value) ? value : cDist) / maxDist : 1.0;
                 case OneBodyLoopStmt loopStmt when loopStmt.Body.StartToken.pos == snapshotLocation:
-                    return maxDist != 0.0 ? 1 - (_cDists.TryGetValue(loopStmt.Body.Body[0], out value) ? value : cDist) / maxDist : 0.0;
+                    return maxDist != 0.0 ? 1 - (_cDists.TryGetValue(loopStmt.Body.Body[0], out value) ? value : cDist) / maxDist : 1.0;
             }
             if (_faultyMethodClone.Body.StartToken.pos == snapshotLocation && stmt == _faultyMethodClone.Body.Body[0])
-                return maxDist != 0.0 ? 1 - (cDist + 1) / maxDist : 0.0;
+                return maxDist != 0.0 ? 1 - (cDist + 1) / maxDist : 1.0;
 
             Statement? prevStmt = placementRefStmt;
             var beforeViolationStmt = _violationStmt != null && snapshotLocation < _violationStmt.EndToken.pos;
             while (prevStmt != null) {
                 prevStmt = DeterminePrevStmt(prevStmt, beforeViolationStmt);
                 if (prevStmt != null && _cDists.TryGetValue(prevStmt, out var prevStmtCDist))
-                    return maxDist != 0.0 ? 1 - prevStmtCDist / maxDist : 0.0;
+                    return maxDist != 0.0 ? 1 - prevStmtCDist / maxDist : 1.0;
             }
         }
         return 0.0;
