@@ -1,3 +1,5 @@
+import sys
+
 def read_snapshots(enumeration):
     pass_snapshots = {}
     fail_snapshots = {}
@@ -26,23 +28,30 @@ def read_snapshots(enumeration):
     return (pass_snapshots, fail_snapshots)   
 
 
-def compute_scores(pass_snapshots, fail_snapshots):
+def compute_scores(use_complete_score, pass_snapshots, fail_snapshots):
     scores = {}
 
     for snapshot in set(pass_snapshots) | set(fail_snapshots):
+        control_dependence_score = float(snapshot[3]) if float(snapshot[3]) != 0 else 0.00001
+        expression_dependence_score = float(snapshot[4]) if float(snapshot[4]) != 0 else 0.00001
         alpha = 1 / 3
         beta = 2 / 3
         gamma = 1
         num_pass = pass_snapshots.get(snapshot, 0)
         num_fail = fail_snapshots.get(snapshot, 0)
-        score = gamma + (alpha / (1 - alpha)) * (1 - beta + (beta * alpha ** num_pass) - (alpha ** num_fail))
-        scores[snapshot] = round(score, 5)
+        dynamic_score = gamma + (alpha / (1 - alpha)) * (1 - beta + (beta * alpha ** num_pass) - (alpha ** num_fail))
+        score = 3 / (control_dependence_score ** -1 + expression_dependence_score ** -1 + dynamic_score ** -1)
+        scores[snapshot] = round(score if use_complete_score else dynamic_score, 5)
     
     ordered_scores = {k: v for k, v in sorted(scores.items(), key=lambda item: (-item[1], int(item[0][0])))}
     return ordered_scores
 
 
 def main():
+    use_complete_score = True
+    if len(sys.argv) > 1 and sys.argv[1] == "short-score":
+        use_complete_score = False
+
     (pass_enum_snapshots, fail_enum_snapshots) = read_snapshots(True)
     (pass_inv_snapshots, fail_inv_snapshots) = read_snapshots(False)
     enum_snapshots = set(pass_enum_snapshots) | set(fail_enum_snapshots)
@@ -56,13 +65,13 @@ def main():
         for key in set(fail_enum_snapshots) | set(fail_inv_snapshots)
     }
 
-    snapshot_scores = compute_scores(pass_snapshots, fail_snapshots)
+    snapshot_scores = compute_scores(use_complete_score, pass_snapshots, fail_snapshots)
 
     with open("snapshots-suspiciousness-score.csv", "w") as f:
         for snapshot, score in snapshot_scores.items():
             source = "both" if snapshot in enum_snapshots and snapshot in inv_snapshots \
                 else "enum" if snapshot in enum_snapshots else "inv"
-            f.write(f"{snapshot},{score},{source}\n")
+            f.write(f"{snapshot[:3]},{score},{source}\n")
         f.close()
 
 
