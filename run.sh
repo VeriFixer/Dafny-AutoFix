@@ -41,7 +41,7 @@ PLUGIN="$SCRIPT_DIR/snapshot-generator/bin/Debug/net8.0/SnapshotGenerator.dll"
 
 verify_program() {
     echo "Attempting to verify $PROGRAM"
-    dotnet ./dafny/Binaries/Dafny.dll verify "$PROGRAM"
+    dotnet ./dafny/Binaries/Dafny.dll verify "$PROGRAM" --solver-path ./dafny/Binaries/z3
 }
 
 infer_invariants() {
@@ -67,7 +67,8 @@ infer_invariants() {
     echo "Generating invariants for $passing_str tests"
     dotnet ./dafny/Binaries/Dafny.dll run "$PROGRAM" \
         --plugin $PLUGIN,"$inv_type_arg $violation_line" \
-        --no-verify --allow-warnings > "$trace_output_file"
+        --no-verify --allow-warnings \
+        --solver-path ./dafny/Binaries/z3 > "$trace_output_file"
 
     sed -i '' '1,2d' "$trace_output_file" # remove output relative to verification
     java -cp $DAIKONDIR/daikon.jar daikon.Daikon "$trace_output_file" --format Simplify > "$inv_output_file"
@@ -94,7 +95,8 @@ generate_snapshots() {
     echo "Generating snapshots via $enumeration_str"
     dotnet ./dafny/Binaries/Dafny.dll run "$PROGRAM" \
         --plugin $PLUGIN,"$gen_type_arg $violation_line $related_location_line" \
-        --no-verify --allow-warnings > "$snapshot_output_file"
+        --no-verify --allow-warnings \
+        --solver-path ./dafny/Binaries/z3 > "$snapshot_output_file"
     sed -i '' '1,2d' "$snapshot_output_file" # remove output relative to verification
 }
 
