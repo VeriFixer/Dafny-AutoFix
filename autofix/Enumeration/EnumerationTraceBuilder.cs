@@ -2,29 +2,30 @@ using Microsoft.BaseTypes;
 using Microsoft.Dafny;
 using Type = Microsoft.Dafny.Type;
 
-namespace SnapshotGenerator.Enumeration;
+namespace AutoFix.Enumeration;
 
-public sealed class ExpressionTraceBuilder : Visitor
+public sealed class EnumerationTraceBuilder : Visitor
 {
     private List<Identifier> IdentifierAvailability { get; }
     private List<string> Ghosts { get; }
     private readonly List<(Expression, int?, int?)> _exprAvailabilityScope;
-    private List<Statement> _newBlockBody = [];
+    public List<Expression> AllEnumPreds => _exprAvailabilityScope.Select(e => e.Item1).ToList();
     
+    private List<Statement> _newBlockBody = [];
     private int? _currentExprAvailabilityScopeStart;
     private int? _currentExprAvailabilityScopeEnd;
     private bool _hasGhostChild;
     private bool _hasIdentifierChild;
     
     private readonly ControlDependenceAnalyzer _cDepAnalyzer;
-    private ExpressionDependenceAnalyzer _eDepAnalyzer;
+    private ExpressionDependenceAnalyzer? _eDepAnalyzer;
 
-    public ExpressionTraceBuilder(ModuleDefinition module, List<Identifier> identifierAvailability, List<string> ghosts) {
+    public EnumerationTraceBuilder(List<Identifier> identifierAvailability, List<string> ghosts) {
         IdentifierAvailability = identifierAvailability;
         Ghosts = ghosts;
         _exprAvailabilityScope = [];
         // identify the scope in which each program abstraction is observable according to the scope in which its subexpressions are defined
-        foreach (var expr in Enumerator.ProgramAbstractions) {
+        foreach (var expr in SnapshotGenerator.ProgramAbstractions) {
             HandleExpression(expr);
             if (!_hasGhostChild && _hasIdentifierChild) // predicates involving only literals aren't relevant since they don't abstract program state
                 _exprAvailabilityScope.Add((expr, _currentExprAvailabilityScopeStart, _currentExprAvailabilityScopeEnd));
@@ -35,20 +36,19 @@ public sealed class ExpressionTraceBuilder : Visitor
         }
         
         _cDepAnalyzer = new ControlDependenceAnalyzer();
-        _eDepAnalyzer = new ExpressionDependenceAnalyzer(module,
-            _exprAvailabilityScope.Select(e => e.Item1).ToList());
     }
     
     public void InstrumentFaultyMethod() {
-        var faultyMethod = SnapshotGenerator.FaultyMethod;
+        var faultyMethod = AutoFix.FaultyMethod;
         if (faultyMethod == null)
             return;
+        _eDepAnalyzer = new ExpressionDependenceAnalyzer(SnapshotGenerator.AllPredicates);
         
         HandleMethod(faultyMethod);
     }
     
     protected override void HandleBlock(BlockStmt blockStmt) {
-        var faultyMethod = SnapshotGenerator.FaultyMethod;
+        var faultyMethod = AutoFix.FaultyMethod;
         if (faultyMethod == null)
             return;
         
@@ -97,11 +97,11 @@ public sealed class ExpressionTraceBuilder : Visitor
         foreach (var expr in availableExprs) {
             Expression? seqSafetyCheckedExpr = null;
             Expression? mapSafetyCheckedExpr = null;
-            var seqSelectSubExprs = ExpressionScanner.SeqSelectExprs
+            var seqSelectSubExprs = Enumerator.SeqSelectExprs
                 .Where(e => expr.ToString().Contains(e.ToString())).ToList();
             if (seqSelectSubExprs.Count > 0)
                 seqSafetyCheckedExpr = HandleSeqSelectExpr(seqSelectSubExprs) ?? null;
-            var mapSelectSubExprs = ExpressionScanner.MapSelectExprs
+            var mapSelectSubExprs = Enumerator.MapSelectExprs
                 .Where(e => expr.ToString().Contains(e.ToString())).ToList();
             if (seqSelectSubExprs.Count > 0)
                 mapSafetyCheckedExpr = HandleMapSelectExpr(mapSelectSubExprs);
@@ -115,7 +115,7 @@ public sealed class ExpressionTraceBuilder : Visitor
             var exprStrElement = AstUtils.CreateStringLiteral(token, expr.Item1.ToString());
             var snapshotCDep = _cDepAnalyzer.ComputeCDep(token.pos, placementRefStmt);
             var snapshotCDepElement = Expression.CreateRealLiteral(null, BigDec.FromString($"{snapshotCDep}".Replace(',', '.')));
-            var snapshotEDep = _eDepAnalyzer.ComputeEDep(expr.Item1);
+            var snapshotEDep = _eDepAnalyzer?.ComputeEDep(expr.Item1) ?? 0.0;
             var snapshotEDepElement = Expression.CreateRealLiteral(null, BigDec.FromString($"{snapshotEDep}".Replace(',', '.')));
             var delimElement1 = AstUtils.CreateStringLiteral(token, ";");
             var delimElement2 = AstUtils.CreateStringLiteral(token, "\\n");

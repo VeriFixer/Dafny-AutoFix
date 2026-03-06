@@ -2,7 +2,7 @@ using System.Text;
 using Microsoft.Dafny;
 using Type = Microsoft.Dafny.Type;
 
-namespace SnapshotGenerator.InvariantInference;
+namespace AutoFix.InvariantInference;
 
 public static class DaikonFormatConverter
 {

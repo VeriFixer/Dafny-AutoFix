@@ -1,7 +1,7 @@
 ﻿using Microsoft.Dafny;
 using Type = System.Type;
 
-namespace SnapshotGenerator;
+namespace AutoFix;
 
 // this is the default implementation of the AST visitor
 // other classes that aim to find specific parts of the AST

@@ -3,7 +3,7 @@ using Microsoft.BaseTypes;
 using Microsoft.Dafny;
 using Type = Microsoft.Dafny.Type;
 
-namespace SnapshotGenerator.InvariantInference;
+namespace AutoFix.InvariantInference;
 
 /// This program file was adapted from another project.
 /// Original source: github.com/xbreu/ContractChecking

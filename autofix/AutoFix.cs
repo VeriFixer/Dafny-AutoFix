@@ -1,19 +1,18 @@
 ﻿using Microsoft.Dafny;
 using Microsoft.Dafny.Plugins;
-using SnapshotGenerator.Enumeration;
-using SnapshotGenerator.InvariantInference;
+using AutoFix.Enumeration;
+using AutoFix.InvariantInference;
 using PluginConfiguration = Microsoft.Dafny.LanguageServer.Plugins.PluginConfiguration;
 
-namespace SnapshotGenerator;
+namespace AutoFix;
 
-public class SnapshotGenerator : PluginConfiguration
+public class AutoFix : PluginConfiguration
 {
     public static int ViolationLine { get; private set; }
     public static int? RelatedLocationLine { get; private set; }
     public static bool DebugMode { get; private set; }
-    private bool _enumeration;
+    private bool _snapshotGeneration;
     private bool _invariantInference;
-    private bool _invariantParsing;
     private bool _passingInvariantInference;
     private bool _failingInvariantInference;
     
@@ -21,11 +20,12 @@ public class SnapshotGenerator : PluginConfiguration
     public static Method? MainMethod { get; set; }
     public static Method? PassingTestsMethod { get; set; }
     public static Method? FailingTestsMethod { get; set; }
+    public static ModuleDefinition? FaultyModule { get; set; }
     
     public override void ParseArguments(string[] args) {
         if (args.Length < 2) return;
-        if (args[0] == "enum") {
-            _enumeration = true;
+        if (args[0] == "snap") {
+            _snapshotGeneration = true;
         } else if (args[0] == "inv_pass" || args[0] == "inv_fail" || args[0] == "inv_all") { 
             _invariantInference = true;
             if (args[0] == "inv_pass")
@@ -36,9 +36,8 @@ public class SnapshotGenerator : PluginConfiguration
                 _passingInvariantInference = true;
                 _failingInvariantInference = true;
             }
-        } else if (args[0] == "inv") {
-            _invariantParsing = true;
         }
+        
         ViolationLine = int.Parse(args[1]);
         if (args.Length > 2 && int.TryParse(args[2], out var arg))
             RelatedLocationLine = arg;
@@ -48,9 +47,8 @@ public class SnapshotGenerator : PluginConfiguration
     }
     
    public override Rewriter[] GetRewriters(ErrorReporter reporter) { 
-       return _enumeration ? [new Enumerator(reporter)] : 
-            (_invariantInference ? [new InvariantInferrer(reporter, _passingInvariantInference, _failingInvariantInference)] : 
-            (_invariantParsing ? [new InvariantParser(reporter)] : []));
+       return _snapshotGeneration ? [new SnapshotGenerator(reporter)] : 
+            _invariantInference ? [new InvariantInferrer(reporter, _passingInvariantInference, _failingInvariantInference)] : [];
    }
 
    public static void SaveInstrumentedProgram(Program program) {
@@ -66,28 +64,48 @@ public class SnapshotGenerator : PluginConfiguration
    }
 }
 
-public class Enumerator(ErrorReporter reporter) : Rewriter(reporter)
+public class SnapshotGenerator(ErrorReporter reporter) : Rewriter(reporter)
 {
+    public static readonly List<Expression> AllPredicates = [];
+    
+    /// -------------------------
+    /// Invariants
+    /// -------------------------
+    private readonly DaikonInvariantParser _invariantParser = new();
+    public static bool InvariantsAlreadyParsed = false;
+    
+    public override void PreResolve(ModuleDefinition module) {
+        _invariantParser.Parse(module);
+        AllPredicates.AddRange(_invariantParser.AllInvariants);
+    }
+    
+    /// -------------------------
+    /// Enumeration
+    /// -------------------------
     public static readonly List<Expression> ProgramAbstractions = [];
 
     public override void PostResolve(ModuleDefinition module) {
-        if (module.Name != "_module") 
+        if (module.Name != "_module")  // only visits the default module, and all the other one from there
             return;
 
-        ExpressionScanner scanner = new();
-        scanner.Visit(module);
-        if (SnapshotGenerator.FaultyMethod == null) return;
-        // collect additional predicates from faulty method after fully parsing the AST
-        scanner.VisitFaultyMethod();
+        Enumerator enumerator = new();
+        enumerator.Visit(module);
+        if (AutoFix.FaultyMethod == null) return;
+        // enumerate additional predicates from faulty method after fully parsing the AST
+        enumerator.VisitFaultyMethod();
 
-        // instrument the program for collecting predicates values at runtime
-        var expressionTraceBuilder = new ExpressionTraceBuilder(module, scanner.IdentifierAvailability, scanner.Ghosts);
-        expressionTraceBuilder.InstrumentFaultyMethod();
+        // instrument the program for collecting enumeration predicates values at runtime
+        var enumerationTraceBuilder = new EnumerationTraceBuilder(enumerator.IdentifierAvailability, enumerator.Ghosts);
+        AllPredicates.AddRange(enumerationTraceBuilder.AllEnumPreds);
+        enumerationTraceBuilder.InstrumentFaultyMethod();
+        
+        _invariantParser.AddEDepToInvariantPrints();
     }
+   
     
     public override void PostResolve(Program program) {
-        if (SnapshotGenerator.DebugMode)
-            SnapshotGenerator.SaveInstrumentedProgram(program);
+        if (AutoFix.DebugMode)
+            AutoFix.SaveInstrumentedProgram(program);
     }
 }
 
@@ -117,22 +135,7 @@ public class InvariantInferrer : Rewriter
     }
 
     public override void PostResolve(Program program) {
-        if (SnapshotGenerator.DebugMode)
-            SnapshotGenerator.SaveInstrumentedProgram(program);
-    }
-}
-
-public class InvariantParser(ErrorReporter reporter) : Rewriter(reporter)
-{
-    public static bool InvariantsAlreadyParsed = false;
-    
-    public override void PreResolve(ModuleDefinition module) {
-        DaikonInvariantParser invariantParser = new();
-        invariantParser.Parse(module);
-    }
-    
-    public override void PostResolve(Program program) {
-        if (SnapshotGenerator.DebugMode)
-            SnapshotGenerator.SaveInstrumentedProgram(program);
+        if (AutoFix.DebugMode)
+            AutoFix.SaveInstrumentedProgram(program);
     }
 }

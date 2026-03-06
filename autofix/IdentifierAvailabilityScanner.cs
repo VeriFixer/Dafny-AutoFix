@@ -1,6 +1,6 @@
 using Microsoft.Dafny;
 
-namespace SnapshotGenerator;
+namespace AutoFix;
 
 public class IdentifierAvailabilityScanner(bool multipleModule = false) : Visitor(multipleModule)
 {
@@ -23,8 +23,8 @@ public class IdentifierAvailabilityScanner(bool multipleModule = false) : Visito
     
     protected override void HandleMemberDecls(TopLevelDeclWithMembers decl) {
         List<Identifier> prevIdentifierAvailability = IdentifierAvailability.ToList();
-        if (decl.StartToken.line <= SnapshotGenerator.ViolationLine && 
-            decl.EndToken.line >= SnapshotGenerator.ViolationLine) {
+        if (decl.StartToken.line <= AutoFix.ViolationLine && 
+            decl.EndToken.line >= AutoFix.ViolationLine) {
             InsideFaultyTopLevelDecl = true;
         } else if (!InsideDefaultClass) {
             return;
@@ -52,8 +52,8 @@ public class IdentifierAvailabilityScanner(bool multipleModule = false) : Visito
     }
     
     protected override void HandleMethod(Method method) {
-        if (!(method.StartToken.line <= SnapshotGenerator.ViolationLine &&
-              method.EndToken.line >= SnapshotGenerator.ViolationLine))
+        if (!(method.StartToken.line <= AutoFix.ViolationLine &&
+              method.EndToken.line >= AutoFix.ViolationLine))
             return;
         _foundFaultyMethod = true;
         

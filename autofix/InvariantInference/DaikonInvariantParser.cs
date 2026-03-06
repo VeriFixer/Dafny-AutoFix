@@ -2,12 +2,15 @@ using System.Text.RegularExpressions;
 using Microsoft.BaseTypes;
 using Microsoft.Dafny;
 
-namespace SnapshotGenerator.InvariantInference;
+namespace AutoFix.InvariantInference;
 
 public class DaikonInvariantParser : Visitor
 {
     public static readonly List<(string, string)> TypeInfo = ImportTypeInfo(); // (var name, var type)
     private readonly List<(Expression, int, Statement)> _invariantsPlacement = []; // (invariant, location, statement after which invariant should be inserted)
+    public List<Expression> AllInvariants => _invariantsPlacement.Select(i => i.Item1).ToList();
+    
+    private readonly List<PrintStmt> _newPrintStmts = [];
     private string _enclosingClassName = "";
     private BlockStmt? _currentBlock;
     private (ReturnStmt?, int) _lastStmtReturn;
@@ -20,9 +23,9 @@ public class DaikonInvariantParser : Visitor
     
     public void Parse(ModuleDefinition module) {
         Visit(module);
-        if (SnapshotGenerator.FaultyMethod == null || InvariantParser.InvariantsAlreadyParsed)
+        if (AutoFix.FaultyMethod == null || SnapshotGenerator.InvariantsAlreadyParsed)
             return;
-        var faultyMethod = SnapshotGenerator.FaultyMethod;
+        var faultyMethod = AutoFix.FaultyMethod;
         if (faultyMethod.Body == null) return;
 
         int location = module.StartToken.pos;
@@ -46,10 +49,8 @@ public class DaikonInvariantParser : Visitor
         }
         
         _cDepAnalyzer = new ControlDependenceAnalyzer();
-        _eDepAnalyzer = new ExpressionDependenceAnalyzer(module, 
-            _invariantsPlacement.Select(i => i.Item1).ToList());
         InstrumentWithInvariants();
-        InvariantParser.InvariantsAlreadyParsed = true;
+        SnapshotGenerator.InvariantsAlreadyParsed = true;
     }
 
     private static List<(string, string)> ImportTypeInfo() {
@@ -73,30 +74,30 @@ public class DaikonInvariantParser : Visitor
         _enclosingClassName = decl.Name;
         base.HandleMemberDecls(decl);
         
-        if (SnapshotGenerator.FaultyMethod == null ||
-            SnapshotGenerator.PassingTestsMethod == null ||
-            SnapshotGenerator.FailingTestsMethod == null) 
+        if (AutoFix.FaultyMethod == null ||
+            AutoFix.PassingTestsMethod == null ||
+            AutoFix.FailingTestsMethod == null) 
             return;
-        AstUtils.PrintTestCases(SnapshotGenerator.PassingTestsMethod);
-        AstUtils.PrintTestCases(SnapshotGenerator.FailingTestsMethod);
+        AstUtils.PrintTestCases(AutoFix.PassingTestsMethod);
+        AstUtils.PrintTestCases(AutoFix.FailingTestsMethod);
     }
     
     protected override void HandleMethod(Method method) {
         // distinguish passing from failing test execution
         if (_enclosingClassName == "_default" && method.Name == "Passing") {
-            SnapshotGenerator.PassingTestsMethod = method;
+            AutoFix.PassingTestsMethod = method;
             AstUtils.PrintTestType(method, true);
         }
         if (_enclosingClassName == "_default" && method.Name == "Failing") {
-            SnapshotGenerator.FailingTestsMethod = method;
+            AutoFix.FailingTestsMethod = method;
             AstUtils.PrintTestType(method, false);
         }
             
         // find the faulty method, i.e., where the violation occurs  
-        if (!(method.StartToken.line <= SnapshotGenerator.ViolationLine &&
-              method.EndToken.line >= SnapshotGenerator.ViolationLine))
+        if (!(method.StartToken.line <= AutoFix.ViolationLine &&
+              method.EndToken.line >= AutoFix.ViolationLine))
             return;
-        SnapshotGenerator.FaultyMethod = method;
+        AutoFix.FaultyMethod = method;
         if (method.Body is { Body.Count: > 0 } && method.Body.Body[^1] is ReturnStmt rStmt)
             _lastStmtReturn = (rStmt, -1);
         base.HandleMethod(method);
@@ -182,7 +183,7 @@ public class DaikonInvariantParser : Visitor
     private void FindInvariantPlacement(int location, Expression invariantExpr) {
         if (_invariantsPlacement.Any(i => i.Item2 == location && i.Item1.ToString() == invariantExpr.ToString()))
             return;
-        var faultyMethod = SnapshotGenerator.FaultyMethod;
+        var faultyMethod = AutoFix.FaultyMethod;
         if (faultyMethod == null || faultyMethod.Body == null) return;
         
         if (location == faultyMethod.Body.StartToken.pos) {
@@ -202,7 +203,7 @@ public class DaikonInvariantParser : Visitor
     }
     
     private void InstrumentWithInvariants() {
-        var faultyMethod = SnapshotGenerator.FaultyMethod;
+        var faultyMethod = AutoFix.FaultyMethod;
         if (faultyMethod == null || faultyMethod.Body == null) return;
 
         foreach (var (inv, location, placement) in _invariantsPlacement) {
@@ -229,15 +230,29 @@ public class DaikonInvariantParser : Visitor
         var exprStrElement = AstUtils.CreateStringLiteral(null, invariantExpr.ToString());
         var snapshotCDep = _cDepAnalyzer?.ComputeCDep(location, placementRefStmt) ?? 0.0;
         var snapshotCDepElement = Expression.CreateRealLiteral(null, BigDec.FromString($"{snapshotCDep}".Replace(',', '.')));
-        var snapshotEDep = _eDepAnalyzer?.ComputeEDep(invariantExpr) ?? 0.0;
-        var snapshotEDepElement = Expression.CreateRealLiteral(null, BigDec.FromString($"{snapshotEDep}".Replace(',', '.')));
         var delimElement1 = AstUtils.CreateStringLiteral(null, ";");
         var delimElement2 = AstUtils.CreateStringLiteral(null, "\\n");
         List<Expression> printElements = [
-            posElement, delimElement1, exprStrElement, delimElement1, invariantExpr, delimElement1, 
-            snapshotCDepElement, delimElement1, snapshotEDepElement, delimElement2
+            posElement, delimElement1, exprStrElement, delimElement1, 
+            invariantExpr, delimElement1, snapshotCDepElement, delimElement2
         ];
-        return new PrintStmt(null, printElements); 
+        
+        var printStmt = new PrintStmt(null, printElements);
+        _newPrintStmts.Add(printStmt);
+        return printStmt; 
+    }
+
+    public void AddEDepToInvariantPrints() {
+        _eDepAnalyzer = new ExpressionDependenceAnalyzer(SnapshotGenerator.AllPredicates);
+
+        foreach (var printStmt in _newPrintStmts) {
+            var invariantExpr = printStmt.Args[4];
+            if (invariantExpr == null) continue;
+            var snapshotEDep = _eDepAnalyzer?.ComputeEDep(invariantExpr) ?? 0.0;
+            var snapshotEDepElement = Expression.CreateRealLiteral(null, BigDec.FromString($"{snapshotEDep}".Replace(',', '.')));
+            var delimElement = AstUtils.CreateStringLiteral(null, ";");
+            printStmt.Args.InsertRange(7, [delimElement, snapshotEDepElement]);
+        }
     }
 
     protected override void HandleBlock(BlockStmt blockStmt) {

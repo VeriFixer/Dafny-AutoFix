@@ -1,15 +1,16 @@
 ﻿using Microsoft.Dafny;
 using Type = Microsoft.Dafny.Type;
 
-namespace SnapshotGenerator.Enumeration;
+namespace AutoFix.Enumeration;
 
-public class ExpressionScanner() : IdentifierAvailabilityScanner(true)
+public class Enumerator() : IdentifierAvailabilityScanner(true)
 {
     public static readonly List<Expression> SeqSelectExprs = [];
     public static readonly List<Expression> MapSelectExprs = [];
     private readonly List<Expression> _integerExprs = [];
     private readonly List<(string, Type, string)> _allArgumentlessPreds = []; // (scope, return type, predicate name)
-    private List<string> _varsToAvoid = [];
+    private readonly List<string> _varsToAvoid = [];
+    private ModuleDefinition? _currentModule;
     private string _currentTopLevelDecl = "";
     private bool _avoidCurrentlyVisitingExpr;
     private string? _parentExpr;
@@ -17,12 +18,16 @@ public class ExpressionScanner() : IdentifierAvailabilityScanner(true)
     /// -------------------------
     /// General AST node visitors
     /// -------------------------
+    protected override void HandleDefaultClassDecl(ModuleDefinition module) {
+        _currentModule = module;
+        base.HandleDefaultClassDecl(module);
+    }
+    
     protected override void HandleSourceDecls(ModuleDefinition module) {
+        _currentModule = module;
         foreach (var decl in module.SourceDecls) {
-            if (decl is LiteralModuleDecl moduleDecl) {
+            if (decl is LiteralModuleDecl moduleDecl)
                 Visit(moduleDecl.ModuleDef);
-                return;
-            }
             if (decl is not TopLevelDeclWithMembers declWithMembers) // includes class, trait, datatype, etc.
                 continue;
             HandleMemberDecls(declWithMembers);
@@ -33,29 +38,31 @@ public class ExpressionScanner() : IdentifierAvailabilityScanner(true)
         _currentTopLevelDecl = decl.Name;
         base.HandleMemberDecls(decl);
         
-        if (SnapshotGenerator.FaultyMethod == null ||
-            SnapshotGenerator.PassingTestsMethod == null ||
-            SnapshotGenerator.FailingTestsMethod == null) 
+        if (AutoFix.FaultyMethod == null ||
+            AutoFix.PassingTestsMethod == null ||
+            AutoFix.FailingTestsMethod == null) 
             return;
-        AstUtils.PrintTestCases(SnapshotGenerator.PassingTestsMethod);
-        AstUtils.PrintTestCases(SnapshotGenerator.FailingTestsMethod);
+        AstUtils.PrintTestCases(AutoFix.PassingTestsMethod);
+        AstUtils.PrintTestCases(AutoFix.FailingTestsMethod);
     }
     
     protected override void HandleMethod(Method method) {
         // distinguish passing from failing test execution
         if (_currentTopLevelDecl == "_default" && method.Name == "Passing") {
-            SnapshotGenerator.PassingTestsMethod = method;
+            AutoFix.PassingTestsMethod = method;
             AstUtils.PrintTestType(method, true);
         }
         if (_currentTopLevelDecl == "_default" && method.Name == "Failing") {
-            SnapshotGenerator.FailingTestsMethod = method;
+            AutoFix.FailingTestsMethod = method;
             AstUtils.PrintTestType(method, false);
         }
         
         // find the faulty method, i.e., where the violation occurs  
-        if (method.StartToken.line <= SnapshotGenerator.ViolationLine &&
-            method.EndToken.line >= SnapshotGenerator.ViolationLine)
-            SnapshotGenerator.FaultyMethod = method;
+        if (method.StartToken.line <= AutoFix.ViolationLine &&
+            method.EndToken.line >= AutoFix.ViolationLine) {
+            AutoFix.FaultyMethod = method;
+            AutoFix.FaultyModule = _currentModule;
+        }
         base.HandleMethod(method);
     }
     
@@ -64,7 +71,7 @@ public class ExpressionScanner() : IdentifierAvailabilityScanner(true)
         if (function.Ins.Count == 0 && function.Body != null) {
             if (function.ResultType is BoolType) {
                 if (InsideDefaultClass || InsideFaultyTopLevelDecl)
-                    AddExpression(function.Body, Enumerator.ProgramAbstractions);
+                    AddExpression(function.Body, SnapshotGenerator.ProgramAbstractions);
             }
             
             // argumentless predicates callable by objects of type _currentTopLevelDecl
@@ -77,7 +84,7 @@ public class ExpressionScanner() : IdentifierAvailabilityScanner(true)
     /// Faulty method visit
     /// -------------------------
     public void VisitFaultyMethod() {
-        var faultyMethod = SnapshotGenerator.FaultyMethod;
+        var faultyMethod = AutoFix.FaultyMethod;
         if (faultyMethod == null)
             return;
         
@@ -143,7 +150,7 @@ public class ExpressionScanner() : IdentifierAvailabilityScanner(true)
     /// -------------------------
     private void CollectExpressions(Expression expr) {
         if (expr.Type is BoolType)
-            AddExpression(expr, Enumerator.ProgramAbstractions);
+            AddExpression(expr, SnapshotGenerator.ProgramAbstractions);
         if (expr.Type is IntType || (expr.Type is UserDefinedType intUType && intUType.Name == "nat"))
             AddExpression(expr, _integerExprs);
         if (expr.Type is UserDefinedType uType && uType.Name[^1] == '?')
@@ -163,7 +170,7 @@ public class ExpressionScanner() : IdentifierAvailabilityScanner(true)
             var callExpr = new ApplySuffix(expr.Origin, null, exprDotName, [], null);
             
             if (pred.Item2 is BoolType) {
-                AddExpression(callExpr, Enumerator.ProgramAbstractions);
+                AddExpression(callExpr, SnapshotGenerator.ProgramAbstractions);
             } else if (pred.Item2 is IntType || (pred.Item2 is UserDefinedType intUType && intUType.Name == "nat")) {
                 AddExpression(callExpr, _integerExprs);
             } else if (pred.Item2 is UserDefinedType uType && uType.Name[^1] == '?') {
@@ -193,11 +200,11 @@ public class ExpressionScanner() : IdentifierAvailabilityScanner(true)
     
     private void CollectBoolExprsFromIntegers(Expression intExpr1, Expression intExpr2) {
         var intCompExpr = Expression.CreateEq(intExpr1, intExpr2, Type.Int);
-        AddExpression(intCompExpr, Enumerator.ProgramAbstractions);
+        AddExpression(intCompExpr, SnapshotGenerator.ProgramAbstractions);
         intCompExpr = Expression.CreateLess(intExpr1, intExpr2);
-        AddExpression(intCompExpr, Enumerator.ProgramAbstractions);
+        AddExpression(intCompExpr, SnapshotGenerator.ProgramAbstractions);
         intCompExpr = Expression.CreateAtMost(intExpr1, intExpr2);
-        AddExpression(intCompExpr, Enumerator.ProgramAbstractions);
+        AddExpression(intCompExpr, SnapshotGenerator.ProgramAbstractions);
     }
 
     private void CollectBoolExprFromNullableRef(Expression expr) {
@@ -206,26 +213,26 @@ public class ExpressionScanner() : IdentifierAvailabilityScanner(true)
         var nullLiteral = new LiteralExpr(expr.Origin, null);
         nullLiteral.Type = expr.Type; // expression should be resolved to avoid errors
         var nullCompExpr = Expression.CreateEq(expr, nullLiteral, expr.Type);
-        AddExpression(nullCompExpr, Enumerator.ProgramAbstractions);
+        AddExpression(nullCompExpr, SnapshotGenerator.ProgramAbstractions);
     }
 
     private void CollectImpliesMutations(BinaryExpr bExpr) { // bExpr = a ==> b
         Expression mutation = CreateExprComplement(bExpr);
-        AddExpression(mutation, Enumerator.ProgramAbstractions); // not a ==> b
+        AddExpression(mutation, SnapshotGenerator.ProgramAbstractions); // not a ==> b
         var negateConsequent = CreateExprComplement(bExpr.E1);
         mutation = Expression.CreateImplies(bExpr.E0, negateConsequent, false);
-        AddExpression(mutation, Enumerator.ProgramAbstractions); // a ==> not b
+        AddExpression(mutation, SnapshotGenerator.ProgramAbstractions); // a ==> not b
         mutation = Expression.CreateImplies(bExpr.E1, bExpr.E0, false);
-        AddExpression(mutation, Enumerator.ProgramAbstractions); // b ==> a
+        AddExpression(mutation, SnapshotGenerator.ProgramAbstractions); // b ==> a
     }
 
     private void CollectExprsComplements() {
-        foreach (var expr in Enumerator.ProgramAbstractions.ToList()) {
+        foreach (var expr in SnapshotGenerator.ProgramAbstractions.ToList()) {
             Expression? complement = null;
             if (expr is BinaryExpr bExpr)
                 complement = CollectBinaryExprComplement(bExpr);
             complement ??= CreateExprComplement(expr);
-            AddExpression(complement, Enumerator.ProgramAbstractions);
+            AddExpression(complement, SnapshotGenerator.ProgramAbstractions);
         }
     }
 

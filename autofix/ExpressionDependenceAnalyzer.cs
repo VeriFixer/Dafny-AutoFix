@@ -1,17 +1,18 @@
 using Microsoft.Dafny;
 
-namespace SnapshotGenerator;
+namespace AutoFix;
 
 public sealed class ExpressionDependenceAnalyzer : Visitor
 {
     private readonly Dictionary<string, int> _eProxs = [];
     private Expression? _violatedPredicate;
     private readonly HashSet<string> _violatedPredicateSubExprs = [];
-    private readonly int _violationLocation = SnapshotGenerator.RelatedLocationLine ?? SnapshotGenerator.ViolationLine;
+    private readonly int _violationLocation = AutoFix.RelatedLocationLine ?? AutoFix.ViolationLine;
     
-    public ExpressionDependenceAnalyzer(ModuleDefinition module, List<Expression> predicates) {
+    public ExpressionDependenceAnalyzer(List<Expression> predicates) {
+        if (AutoFix.FaultyModule == null) return;
         // find violated predicate
-        Visit(module);
+        Visit(AutoFix.FaultyModule);
         if (_violatedPredicate == null) return;
         _violatedPredicateSubExprs = GetSubExpressions(_violatedPredicate);
         

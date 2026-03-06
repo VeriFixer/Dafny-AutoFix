@@ -1,10 +1,10 @@
 import sys
 
-def read_snapshots(enumeration):
+def read_snapshots():
     pass_snapshots = {}
     fail_snapshots = {}
 
-    with open("snapshots-enum.csv" if enumeration else "snapshots-inv.csv", 'r') as file:
+    with open("snapshots.csv", 'r') as file:
         passing = None
         current_test_case_snapshots = set()
         for line in file:
@@ -52,26 +52,15 @@ def main():
     if len(sys.argv) > 1 and sys.argv[1] == "short-score":
         use_complete_score = False
 
-    (pass_enum_snapshots, fail_enum_snapshots) = read_snapshots(True)
-    (pass_inv_snapshots, fail_inv_snapshots) = read_snapshots(False)
-    enum_snapshots = set(pass_enum_snapshots) | set(fail_enum_snapshots)
-    inv_snapshots = set(pass_inv_snapshots) | set(fail_inv_snapshots)
-    pass_snapshots = {
-        key: pass_enum_snapshots.get(key, 0) + pass_inv_snapshots.get(key, 0)
-        for key in set(pass_enum_snapshots) | set(pass_inv_snapshots)
-    }
-    fail_snapshots = {
-        key: fail_enum_snapshots.get(key, 0) + fail_inv_snapshots.get(key, 0)
-        for key in set(fail_enum_snapshots) | set(fail_inv_snapshots)
-    }
-
+    (pass_snapshots, fail_snapshots) = read_snapshots()
     snapshot_scores = compute_scores(use_complete_score, pass_snapshots, fail_snapshots)
 
     with open("snapshots-suspiciousness-score.csv", "w") as f:
         for snapshot, score in snapshot_scores.items():
-            source = "both" if snapshot in enum_snapshots and snapshot in inv_snapshots \
-                else "enum" if snapshot in enum_snapshots else "inv"
-            f.write(f"{snapshot[:3]},{score},{source}\n")
+            # source = "both" if snapshot in enum_snapshots and snapshot in inv_snapshots \
+            #     else "enum" if snapshot in enum_snapshots else "inv"
+            # f.write(f"{snapshot[:3]},{score},{source}\n")
+            f.write(f"{snapshot[:3]},{score}\n")
         f.close()
 
 

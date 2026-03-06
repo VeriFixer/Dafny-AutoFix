@@ -35,7 +35,7 @@ if [ "$1" = "--help" ]; then
 fi
 
 PROGRAM=$1
-PLUGIN="$SCRIPT_DIR/snapshot-generator/bin/Debug/net8.0/SnapshotGenerator.dll"
+PLUGIN="$SCRIPT_DIR/autofix/bin/Debug/net8.0/AutoFix.dll"
 
 # ------------------------------------------------------------------------------ Utils
 
@@ -75,29 +75,15 @@ infer_invariants() {
 }
 
 generate_snapshots() {
-    local enumeration="$1"
-    local violation_line="$2"
-    local related_location_line="$3"
+    local violation_line="$1"
+    local related_location_line="$2"
 
-    enumeration_str=""
-    gen_type_arg=""
-    snapshot_output_file=""
-    if [[ $enumeration == true ]]; then 
-        enumeration_str="enumeration" 
-        gen_type_arg="enum"
-        snapshot_output_file="snapshots-enum.csv"
-    else 
-        enumeration_str="invariants"
-        gen_type_arg="inv"
-        snapshot_output_file="snapshots-inv.csv"
-    fi
-
-    echo "Generating snapshots via $enumeration_str"
+    echo "Generating snapshots"
     dotnet ./dafny/Binaries/Dafny.dll run "$PROGRAM" \
-        --plugin $PLUGIN,"$gen_type_arg $violation_line $related_location_line" \
+        --plugin $PLUGIN,"snap $violation_line $related_location_line" \
         --no-verify --allow-warnings \
-        --solver-path ./dafny/Binaries/z3 > "$snapshot_output_file"
-    sed -i '' '1,2d' "$snapshot_output_file" # remove output relative to verification
+        --solver-path ./dafny/Binaries/z3 > snapshots.csv
+    sed -i '' '1,2d' snapshots.csv # remove output relative to verification
 }
 
 # ------------------------------------------------------------------------------ Main
@@ -130,9 +116,7 @@ echo -e "$(infer_invariants false $violation_line)\n"
 python3 filter-invs.py
 
 # Generate snapshots via enumeration and invariants
-
-echo "$(generate_snapshots true $violation_line $related_location_line)"
-echo -e "$(generate_snapshots false $violation_line $related_location_line)\n"
+echo -e "$(generate_snapshots $violation_line $related_location_line)\n"
 
 # Compute the suspiciousness score of each snapshot
 echo "Computing suspiciousness scores"

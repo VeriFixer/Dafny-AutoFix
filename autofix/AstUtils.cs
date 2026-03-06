@@ -2,7 +2,7 @@ using System.Diagnostics;
 using Microsoft.Dafny;
 using Type = Microsoft.Dafny.Type;
 
-namespace SnapshotGenerator;
+namespace AutoFix;
 
 public static class AstUtils
 {
@@ -180,12 +180,12 @@ public static class AstUtils
         foreach (var stmt in method.Body.Body.ToList()) {
             var isVarDecl = stmt is VarDeclStmt { Assign: AssignStatement { Rhss: 
                 [ExprRhs { Expr: ApplySuffix appSufExpr1 } ] } } &&
-                (appSufExpr1.Lhs is NameSegment nSegExpr1 && nSegExpr1.Name == SnapshotGenerator.FaultyMethod?.Name || 
-                 appSufExpr1.Lhs is ExprDotName exprDotName1 && exprDotName1.SuffixName == SnapshotGenerator.FaultyMethod?.Name);
+                (appSufExpr1.Lhs is NameSegment nSegExpr1 && nSegExpr1.Name == AutoFix.FaultyMethod?.Name || 
+                 appSufExpr1.Lhs is ExprDotName exprDotName1 && exprDotName1.SuffixName == AutoFix.FaultyMethod?.Name);
             var isAssign = stmt is AssignStatement { Rhss: 
                 [ExprRhs { Expr: ApplySuffix appSufExpr2 } ] } &&
-                (appSufExpr2.Lhs is NameSegment nSegExpr2 && nSegExpr2.Name == SnapshotGenerator.FaultyMethod?.Name || 
-                 appSufExpr2.Lhs is ExprDotName exprDotName2 && exprDotName2.SuffixName == SnapshotGenerator.FaultyMethod?.Name);
+                (appSufExpr2.Lhs is NameSegment nSegExpr2 && nSegExpr2.Name == AutoFix.FaultyMethod?.Name || 
+                 appSufExpr2.Lhs is ExprDotName exprDotName2 && exprDotName2.SuffixName == AutoFix.FaultyMethod?.Name);
             
             if (isVarDecl || isAssign) {
                 var idx = method.Body.Body.IndexOf(stmt);

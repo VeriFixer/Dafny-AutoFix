@@ -1,7 +1,7 @@
 using Microsoft.Dafny;
 using Type = Microsoft.Dafny.Type;
 
-namespace SnapshotGenerator.InvariantInference;
+namespace AutoFix.InvariantInference;
 
 public class DaikonInstrumenter(List<Identifier> identifierAvailability) : Visitor(true)
 {
@@ -13,11 +13,11 @@ public class DaikonInstrumenter(List<Identifier> identifierAvailability) : Visit
     
     public void Instrument(ModuleDefinition module) {
         Visit(module);
-        if (SnapshotGenerator.MainMethod == null || 
-            SnapshotGenerator.FaultyMethod == null)
+        if (AutoFix.MainMethod == null || 
+            AutoFix.FaultyMethod == null)
             return;
-        var mainMethod = SnapshotGenerator.MainMethod;
-        var faultyMethod = SnapshotGenerator.FaultyMethod;
+        var mainMethod = AutoFix.MainMethod;
+        var faultyMethod = AutoFix.FaultyMethod;
         AdjustTestExecution(mainMethod);
         
         AddHeader();
@@ -41,12 +41,12 @@ public class DaikonInstrumenter(List<Identifier> identifierAvailability) : Visit
     protected override void HandleMethod(Method method) {
         // find Main, i.e., entrypoint, where the faulty method is being exercised
         if (method.Name == "Main")
-            SnapshotGenerator.MainMethod = method;
+            AutoFix.MainMethod = method;
         // find the faulty method, i.e., where the violation occurs  
-        if (!(method.StartToken.line <= SnapshotGenerator.ViolationLine &&
-              method.EndToken.line >= SnapshotGenerator.ViolationLine))
+        if (!(method.StartToken.line <= AutoFix.ViolationLine &&
+              method.EndToken.line >= AutoFix.ViolationLine))
             return;
-        SnapshotGenerator.FaultyMethod = method;
+        AutoFix.FaultyMethod = method;
         
         // instrument the method with calls to dummy methods for invariant inference
         if (method.Body is { Body.Count: > 0 } && method.Body.Body[^1] is ReturnStmt rStmt)
@@ -59,7 +59,7 @@ public class DaikonInstrumenter(List<Identifier> identifierAvailability) : Visit
     /// Instrumentation
     /// -------------------------
     protected override void HandleBlock(BlockStmt blockStmt) {
-        var faultyMethod = SnapshotGenerator.FaultyMethod;
+        var faultyMethod = AutoFix.FaultyMethod;
         
         var prevNewBlock = _newBlockBody;
         _newBlockBody = [];
@@ -147,7 +147,7 @@ public class DaikonInstrumenter(List<Identifier> identifierAvailability) : Visit
     /// Daikon
     /// -------------------------
     private void AddHeader() {
-        var method = SnapshotGenerator.FaultyMethod;
+        var method = AutoFix.FaultyMethod;
         if (method == null) return;
         
         var headerElement = AstUtils.CreateStringLiteral(method.Origin, "decl-version 2.0\\n");
@@ -159,8 +159,8 @@ public class DaikonInstrumenter(List<Identifier> identifierAvailability) : Visit
     }
 
     private void AddMethodDeclaration(Method method) {
-        var faultyMethod = SnapshotGenerator.FaultyMethod;
-        var mainMethod = SnapshotGenerator.MainMethod;
+        var faultyMethod = AutoFix.FaultyMethod;
+        var mainMethod = AutoFix.MainMethod;
         if (faultyMethod == null || mainMethod == null) return;
         
         foreach (var type in new List<string> { "ENTER", "EXIT00" }) {
@@ -194,7 +194,7 @@ public class DaikonInstrumenter(List<Identifier> identifierAvailability) : Visit
     }
 
     private void AddDummyMethodVariableDeclarations(Method method, bool isExit) {
-        var mainMethod = SnapshotGenerator.MainMethod;
+        var mainMethod = AutoFix.MainMethod;
         if (mainMethod == null) return;
         
         foreach (var input in method.Ins.Where(i => !i.IsGhost))
@@ -257,7 +257,7 @@ public class DaikonInstrumenter(List<Identifier> identifierAvailability) : Visit
         }
         // Add points at the method's exit(s)
         newStmts = AddMethodTracePoints(method, true);
-        if (method != SnapshotGenerator.FaultyMethod || _lastStmtReturn == null) {
+        if (method != AutoFix.FaultyMethod || _lastStmtReturn == null) {
             method.Body.Body.AddRange(newStmts);
         } else {
             var returnIdx = method.Body.Body.IndexOf(_lastStmtReturn);
@@ -272,7 +272,7 @@ public class DaikonInstrumenter(List<Identifier> identifierAvailability) : Visit
         var declarationElement = AstUtils.CreateStringLiteral(method.Origin, programPoint);
         newStmts.Add(new PrintStmt(method.Origin, [declarationElement]));
 
-        newStmts.AddRange(method == SnapshotGenerator.FaultyMethod
+        newStmts.AddRange(method == AutoFix.FaultyMethod
             ? AddFaultyMethodVariableTracePoints(method, isExit)
             : AddDummyMethodVariableTracePoints(method, isExit));
 

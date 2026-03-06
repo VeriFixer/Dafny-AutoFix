@@ -1,6 +1,6 @@
 using Microsoft.Dafny;
 
-namespace SnapshotGenerator;
+namespace AutoFix;
 
 public sealed class ControlDependenceAnalyzer : Visitor
 {
@@ -16,13 +16,13 @@ public sealed class ControlDependenceAnalyzer : Visitor
     private readonly Method? _faultyMethodClone;
 
     public ControlDependenceAnalyzer() {
-        var faultyMethod = SnapshotGenerator.FaultyMethod;
+        var faultyMethod = AutoFix.FaultyMethod;
         if (faultyMethod?.Body == null) return;
         var cloner = new Cloner();
         _faultyMethodClone = new Method(cloner, faultyMethod);
         
         // find faulty location
-        if (SnapshotGenerator.ViolationLine <= _faultyMethodClone.Body.StartToken.line)
+        if (AutoFix.ViolationLine <= _faultyMethodClone.Body.StartToken.line)
             _violationStmt = _faultyMethodClone.Body;
         HandleMethod(_faultyMethodClone);
         _firstVisit = false;
@@ -33,13 +33,13 @@ public sealed class ControlDependenceAnalyzer : Visitor
     }
 
     private void CheckForViolationStatement(Statement stmt) {
-        if (stmt.StartToken.line == SnapshotGenerator.ViolationLine &&
-            stmt.EndToken.line == SnapshotGenerator.ViolationLine) 
+        if (stmt.StartToken.line == AutoFix.ViolationLine &&
+            stmt.EndToken.line == AutoFix.ViolationLine) 
         {
             _violationStmt = stmt;
         }
-        else if (stmt.StartToken.line <= SnapshotGenerator.ViolationLine &&
-                 stmt.EndToken.line >= SnapshotGenerator.ViolationLine) 
+        else if (stmt.StartToken.line <= AutoFix.ViolationLine &&
+                 stmt.EndToken.line >= AutoFix.ViolationLine) 
         { // the violation location may be an entire block (e.g., a loop with a violated invariant)
             _violationStmt ??= stmt;
         }
