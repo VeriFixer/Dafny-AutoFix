@@ -73,7 +73,6 @@ public class Enumerator() : IdentifierAvailabilityScanner(true)
         
         base.HandleMethod(faultyMethod);
         CollectBoolExprsFromIntegers();
-        CollectExprsComplements();
     }
 
     protected override void HandleExpression(Expression expr) {
@@ -132,6 +131,7 @@ public class Enumerator() : IdentifierAvailabilityScanner(true)
     /// Expression collection
     /// -------------------------
     private void CollectExpressions(Expression expr) {
+        if (expr is ParensExpression) return;
         if (expr.Type is BoolType)
             AddExpression(expr, SnapshotGenerator.ProgramAbstractions);
         if (expr.Type is IntType || (expr.Type is UserDefinedType intUType && intUType.Name == "nat"))
@@ -199,26 +199,31 @@ public class Enumerator() : IdentifierAvailabilityScanner(true)
     }
 
     private void CollectImpliesMutations(BinaryExpr bExpr) { // bExpr = a ==> b
-        Expression mutation = CreateExprComplement(bExpr);
-        AddExpression(mutation, SnapshotGenerator.ProgramAbstractions); // not a ==> b
         var negateConsequent = CreateExprComplement(bExpr.E1);
-        mutation = Expression.CreateImplies(bExpr.E0, negateConsequent, false);
+        Expression mutation = Expression.CreateImplies(bExpr.E0, negateConsequent, false);
         AddExpression(mutation, SnapshotGenerator.ProgramAbstractions); // a ==> not b
         mutation = Expression.CreateImplies(bExpr.E1, bExpr.E0, false);
         AddExpression(mutation, SnapshotGenerator.ProgramAbstractions); // b ==> a
     }
-
-    private void CollectExprsComplements() {
-        foreach (var expr in SnapshotGenerator.ProgramAbstractions.ToList()) {
-            Expression? complement = null;
-            if (expr is BinaryExpr bExpr)
-                complement = CollectBinaryExprComplement(bExpr);
-            complement ??= CreateExprComplement(expr);
-            AddExpression(complement, SnapshotGenerator.ProgramAbstractions);
-        }
+    
+    private Expression? CreateBinaryExprSymmetric(BinaryExpr bExpr) {
+        return bExpr.Op switch {
+            BinaryExpr.Opcode.Eq => Expression.CreateEq(bExpr.E1, bExpr.E0, bExpr.E0.Type),
+            BinaryExpr.Opcode.Neq => AstUtils.CreateNeq(bExpr.E1, bExpr.E0, bExpr.E0.Type),
+            BinaryExpr.Opcode.Iff => new BinaryExpr(bExpr.Origin, bExpr.Op, bExpr.E1, bExpr.E0),
+            BinaryExpr.Opcode.Imp => new BinaryExpr(bExpr.Origin, BinaryExpr.Opcode.Exp, bExpr.E1, bExpr.E0),
+            BinaryExpr.Opcode.Exp => new BinaryExpr(bExpr.Origin, BinaryExpr.Opcode.Imp, bExpr.E1, bExpr.E0),
+            BinaryExpr.Opcode.Lt => AstUtils.CreateGreater(bExpr.E1, bExpr.E0),
+            BinaryExpr.Opcode.Le => AstUtils.CreateAtLeast(bExpr.E1, bExpr.E0),
+            BinaryExpr.Opcode.Gt => Expression.CreateLess(bExpr.E1, bExpr.E0),
+            BinaryExpr.Opcode.Ge => Expression.CreateAtMost(bExpr.E1, bExpr.E0),
+            BinaryExpr.Opcode.And => Expression.CreateAnd(bExpr.E1, bExpr.E0, false),
+            BinaryExpr.Opcode.Or => Expression.CreateOr(bExpr.E1, bExpr.E0, false),
+            _ => null
+        };
     }
 
-    private Expression? CollectBinaryExprComplement(BinaryExpr bExpr) {
+    private Expression? CreateBinaryExprComplement(BinaryExpr bExpr) {
         return bExpr.Op switch {
             BinaryExpr.Opcode.Eq => AstUtils.CreateNeq(bExpr.E0, bExpr.E1, bExpr.E0.Type),
             BinaryExpr.Opcode.Neq => Expression.CreateEq(bExpr.E0, bExpr.E1, bExpr.E0.Type),
@@ -247,11 +252,34 @@ public class Enumerator() : IdentifierAvailabilityScanner(true)
     private void AddExpression(Expression expr, List<Expression> collection) {
         if (expr is ApplySuffix { ResolvedExpression: FunctionCallExpr fCallExpr } &&
             fCallExpr.Function.IsGhost) return;
-        if (!ExprAlreadyCollected(expr, collection))
+        if (!ExprAlreadyCollected(expr, collection) && !ExprIsRedundant(expr, collection))
             collection.Add(expr);
     }
     
     private bool ExprAlreadyCollected(Expression expr, List<Expression> collection) {
         return collection.Find((e) => e.ToString() == expr.ToString()) != null;
+    }
+    
+    private bool ExprIsRedundant(Expression newExpr, List<Expression> collection) {
+        if (newExpr is BinaryExpr bExpr1) {
+            var symmetric = CreateBinaryExprSymmetric(bExpr1);
+            if (symmetric != null && collection.Select(e => e.ToString()).Contains(symmetric.ToString())) 
+                return true;
+        }
+        
+        Expression? complement = null;
+        if (newExpr is BinaryExpr bExpr2)
+            complement = CreateBinaryExprComplement(bExpr2);
+        complement ??= CreateExprComplement(newExpr);
+        if (collection.Select(e => e.ToString()).Contains(complement.ToString())) 
+            return true;
+
+        if (complement is BinaryExpr bExpr3) {
+            Expression? complementSymmetric = CreateBinaryExprSymmetric(bExpr3);
+            if (complementSymmetric != null && collection.Select(e => e.ToString()).Contains(complementSymmetric.ToString()))
+                return true;
+        }
+        
+        return false;
     }
 }
