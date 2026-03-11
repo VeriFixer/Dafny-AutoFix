@@ -100,6 +100,16 @@ public class SnapshotGenerator(ErrorReporter reporter) : Rewriter(reporter)
         enumerationTraceBuilder.InstrumentFaultyMethod();
         
         _invariantParser.AddEDepToInvariantPrints();
+        
+        // distinguish passing from failing test execution
+        if (AutoFix.PassingTestsMethod != null) {
+            AstUtils.PrintTestType(AutoFix.PassingTestsMethod, true);
+            AstUtils.PrintTestCases(AutoFix.PassingTestsMethod);
+        }
+        if (AutoFix.FailingTestsMethod != null) {
+            AstUtils.PrintTestType(AutoFix.FailingTestsMethod, false);
+            AstUtils.PrintTestCases(AutoFix.FailingTestsMethod);
+        }
     }
    
     

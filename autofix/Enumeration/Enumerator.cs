@@ -37,26 +37,9 @@ public class Enumerator() : IdentifierAvailabilityScanner(true)
     protected override void HandleMemberDecls(TopLevelDeclWithMembers decl) {  
         _currentTopLevelDecl = decl.Name;
         base.HandleMemberDecls(decl);
-        
-        if (AutoFix.FaultyMethod == null ||
-            AutoFix.PassingTestsMethod == null ||
-            AutoFix.FailingTestsMethod == null) 
-            return;
-        AstUtils.PrintTestCases(AutoFix.PassingTestsMethod);
-        AstUtils.PrintTestCases(AutoFix.FailingTestsMethod);
     }
     
     protected override void HandleMethod(Method method) {
-        // distinguish passing from failing test execution
-        if (_currentTopLevelDecl == "_default" && method.Name == "Passing") {
-            AutoFix.PassingTestsMethod = method;
-            AstUtils.PrintTestType(method, true);
-        }
-        if (_currentTopLevelDecl == "_default" && method.Name == "Failing") {
-            AutoFix.FailingTestsMethod = method;
-            AstUtils.PrintTestType(method, false);
-        }
-        
         // find the faulty method, i.e., where the violation occurs  
         if (method.StartToken.line <= AutoFix.ViolationLine &&
             method.EndToken.line >= AutoFix.ViolationLine) {
@@ -210,8 +193,7 @@ public class Enumerator() : IdentifierAvailabilityScanner(true)
     private void CollectBoolExprFromNullableRef(Expression expr) {
         if (expr is LiteralExpr lExpr && lExpr.Value == null)
             return;
-        var nullLiteral = new LiteralExpr(expr.Origin, null);
-        nullLiteral.Type = expr.Type; // expression should be resolved to avoid errors
+        var nullLiteral = new LiteralExpr(expr.Origin, null) { Type = expr.Type }; // expression should be resolved to avoid errors
         var nullCompExpr = Expression.CreateEq(expr, nullLiteral, expr.Type);
         AddExpression(nullCompExpr, SnapshotGenerator.ProgramAbstractions);
     }

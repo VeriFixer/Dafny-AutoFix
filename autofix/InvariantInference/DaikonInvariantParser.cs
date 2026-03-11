@@ -73,25 +73,14 @@ public class DaikonInvariantParser : Visitor
     protected override void HandleMemberDecls(TopLevelDeclWithMembers decl) {
         _enclosingClassName = decl.Name;
         base.HandleMemberDecls(decl);
-        
-        if (AutoFix.FaultyMethod == null ||
-            AutoFix.PassingTestsMethod == null ||
-            AutoFix.FailingTestsMethod == null) 
-            return;
-        AstUtils.PrintTestCases(AutoFix.PassingTestsMethod);
-        AstUtils.PrintTestCases(AutoFix.FailingTestsMethod);
     }
     
     protected override void HandleMethod(Method method) {
         // distinguish passing from failing test execution
-        if (_enclosingClassName == "_default" && method.Name == "Passing") {
+        if (_enclosingClassName == "_default" && method.Name == "Passing")
             AutoFix.PassingTestsMethod = method;
-            AstUtils.PrintTestType(method, true);
-        }
-        if (_enclosingClassName == "_default" && method.Name == "Failing") {
+        if (_enclosingClassName == "_default" && method.Name == "Failing")
             AutoFix.FailingTestsMethod = method;
-            AstUtils.PrintTestType(method, false);
-        }
             
         // find the faulty method, i.e., where the violation occurs  
         if (!(method.StartToken.line <= AutoFix.ViolationLine &&
