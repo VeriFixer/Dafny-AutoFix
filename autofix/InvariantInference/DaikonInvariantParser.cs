@@ -18,9 +18,6 @@ public class DaikonInvariantParser : Visitor
     private Statement? _prevStmt;
     private (BlockStmt?, int) _targetStmt = (null, -1);
 
-    private ControlDependenceAnalyzer? _cDepAnalyzer;
-    private ExpressionDependenceAnalyzer? _eDepAnalyzer;
-    
     public void Parse(ModuleDefinition module) {
         Visit(module);
         if (AutoFix.FaultyMethod == null || SnapshotGenerator.InvariantsAlreadyParsed)
@@ -48,7 +45,7 @@ public class DaikonInvariantParser : Visitor
             }
         }
         
-        _cDepAnalyzer = new ControlDependenceAnalyzer();
+        SnapshotGenerator.CDepAnalyzer = new ControlDependenceAnalyzer();
         InstrumentWithInvariants();
         SnapshotGenerator.InvariantsAlreadyParsed = true;
     }
@@ -217,7 +214,7 @@ public class DaikonInvariantParser : Visitor
     private PrintStmt PrintInvariant(Expression invariantExpr, int location, Statement placementRefStmt) {
         var posElement = Expression.CreateIntLiteral(null, location);
         var exprStrElement = AstUtils.CreateStringLiteral(null, invariantExpr.ToString());
-        var snapshotCDep = _cDepAnalyzer?.ComputeCDep(location, placementRefStmt) ?? 0.0;
+        var snapshotCDep = SnapshotGenerator.CDepAnalyzer?.ComputeCDep(location, placementRefStmt) ?? 0.0;
         var snapshotCDepElement = Expression.CreateRealLiteral(null, BigDec.FromString($"{snapshotCDep}".Replace(',', '.')));
         var delimElement1 = AstUtils.CreateStringLiteral(null, ";");
         var delimElement2 = AstUtils.CreateStringLiteral(null, ";inv\\n");
@@ -232,12 +229,10 @@ public class DaikonInvariantParser : Visitor
     }
 
     public void AddEDepToInvariantPrints() {
-        _eDepAnalyzer = new ExpressionDependenceAnalyzer(SnapshotGenerator.AllPredicates);
-
         foreach (var printStmt in _newPrintStmts) {
             var invariantExpr = printStmt.Args[4];
             if (invariantExpr == null) continue;
-            var snapshotEDep = _eDepAnalyzer?.ComputeEDep(invariantExpr) ?? 0.0;
+            var snapshotEDep = SnapshotGenerator.EDepAnalyzer?.ComputeEDep(invariantExpr) ?? 0.0;
             var snapshotEDepElement = Expression.CreateRealLiteral(null, BigDec.FromString($"{snapshotEDep}".Replace(',', '.')));
             var delimElement = AstUtils.CreateStringLiteral(null, ";");
             printStmt.Args.InsertRange(7, [delimElement, snapshotEDepElement]);

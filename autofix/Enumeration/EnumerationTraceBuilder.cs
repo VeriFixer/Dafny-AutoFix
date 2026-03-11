@@ -17,9 +17,6 @@ public sealed class EnumerationTraceBuilder : Visitor
     private bool _hasGhostChild;
     private bool _hasIdentifierChild;
     
-    private readonly ControlDependenceAnalyzer _cDepAnalyzer;
-    private ExpressionDependenceAnalyzer? _eDepAnalyzer;
-
     public EnumerationTraceBuilder(List<Identifier> identifierAvailability, List<string> ghosts) {
         IdentifierAvailability = identifierAvailability;
         Ghosts = ghosts;
@@ -34,16 +31,12 @@ public sealed class EnumerationTraceBuilder : Visitor
             _hasGhostChild = false;
             _hasIdentifierChild = false;
         }
-        
-        _cDepAnalyzer = new ControlDependenceAnalyzer();
     }
     
     public void InstrumentFaultyMethod() {
         var faultyMethod = AutoFix.FaultyMethod;
         if (faultyMethod == null)
             return;
-        _eDepAnalyzer = new ExpressionDependenceAnalyzer(SnapshotGenerator.AllPredicates);
-        
         HandleMethod(faultyMethod);
     }
     
@@ -113,9 +106,9 @@ public sealed class EnumerationTraceBuilder : Visitor
             
             var posElement = Expression.CreateIntLiteral(token, token.pos);
             var exprStrElement = AstUtils.CreateStringLiteral(token, expr.Item1.ToString());
-            var snapshotCDep = _cDepAnalyzer.ComputeCDep(token.pos, placementRefStmt);
+            var snapshotCDep = SnapshotGenerator.CDepAnalyzer?.ComputeCDep(token.pos, placementRefStmt) ?? 0.0;
             var snapshotCDepElement = Expression.CreateRealLiteral(null, BigDec.FromString($"{snapshotCDep}".Replace(',', '.')));
-            var snapshotEDep = _eDepAnalyzer?.ComputeEDep(expr.Item1) ?? 0.0;
+            var snapshotEDep = SnapshotGenerator.EDepAnalyzer?.ComputeEDep(expr.Item1) ?? 0.0;
             var snapshotEDepElement = Expression.CreateRealLiteral(null, BigDec.FromString($"{snapshotEDep}".Replace(',', '.')));
             var delimElement1 = AstUtils.CreateStringLiteral(token, ";");
             var delimElement2 = AstUtils.CreateStringLiteral(token, ";enum\\n");

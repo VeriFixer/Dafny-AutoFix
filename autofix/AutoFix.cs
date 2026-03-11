@@ -67,6 +67,8 @@ public class AutoFix : PluginConfiguration
 public class SnapshotGenerator(ErrorReporter reporter) : Rewriter(reporter)
 {
     public static readonly List<Expression> AllPredicates = [];
+    public static ControlDependenceAnalyzer? CDepAnalyzer;
+    public static ExpressionDependenceAnalyzer? EDepAnalyzer;
     
     /// -------------------------
     /// Invariants
@@ -97,6 +99,7 @@ public class SnapshotGenerator(ErrorReporter reporter) : Rewriter(reporter)
         // instrument the program for collecting enumeration predicates values at runtime
         var enumerationTraceBuilder = new EnumerationTraceBuilder(enumerator.IdentifierAvailability, enumerator.Ghosts);
         AllPredicates.AddRange(enumerationTraceBuilder.AllEnumPreds);
+        EDepAnalyzer = new ExpressionDependenceAnalyzer(AllPredicates);
         enumerationTraceBuilder.InstrumentFaultyMethod();
         
         _invariantParser.AddEDepToInvariantPrints();
