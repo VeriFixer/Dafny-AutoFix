@@ -220,7 +220,7 @@ public class DaikonInvariantParser : Visitor
         var snapshotCDep = _cDepAnalyzer?.ComputeCDep(location, placementRefStmt) ?? 0.0;
         var snapshotCDepElement = Expression.CreateRealLiteral(null, BigDec.FromString($"{snapshotCDep}".Replace(',', '.')));
         var delimElement1 = AstUtils.CreateStringLiteral(null, ";");
-        var delimElement2 = AstUtils.CreateStringLiteral(null, "\\n");
+        var delimElement2 = AstUtils.CreateStringLiteral(null, ";inv\\n");
         List<Expression> printElements = [
             posElement, delimElement1, exprStrElement, delimElement1, 
             invariantExpr, delimElement1, snapshotCDepElement, delimElement2

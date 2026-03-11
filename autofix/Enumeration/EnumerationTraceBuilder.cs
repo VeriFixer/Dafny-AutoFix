@@ -118,7 +118,7 @@ public sealed class EnumerationTraceBuilder : Visitor
             var snapshotEDep = _eDepAnalyzer?.ComputeEDep(expr.Item1) ?? 0.0;
             var snapshotEDepElement = Expression.CreateRealLiteral(null, BigDec.FromString($"{snapshotEDep}".Replace(',', '.')));
             var delimElement1 = AstUtils.CreateStringLiteral(token, ";");
-            var delimElement2 = AstUtils.CreateStringLiteral(token, "\\n");
+            var delimElement2 = AstUtils.CreateStringLiteral(token, ";enum\\n");
             List<Expression> printElements = [
                 posElement, delimElement1, exprStrElement, delimElement1, safetyCheckedExpr ?? expr.Item1, 
                 delimElement1, snapshotCDepElement, delimElement1, snapshotEDepElement, delimElement2

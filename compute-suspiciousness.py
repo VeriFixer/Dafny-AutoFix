@@ -1,6 +1,8 @@
 import sys
 
 def read_snapshots():
+    enum_snapshots = set()
+    inv_snapshots = set()
     pass_snapshots = {}
     fail_snapshots = {}
 
@@ -15,8 +17,11 @@ def read_snapshots():
             elif line.strip() == "Running test case":
                 current_test_case_snapshots = set()
             elif passing != None:
+                full_snapshot = tuple(line.strip().split(';'))
+                snapshot = full_snapshot[:5]
+                collection = enum_snapshots if full_snapshot[5] == "enum" else inv_snapshots
+                collection.add(snapshot)
                 collection = pass_snapshots if passing else fail_snapshots
-                snapshot = tuple(line.strip().split(';'))
                 if snapshot in current_test_case_snapshots:
                     continue
                 current_test_case_snapshots.add(snapshot)
@@ -25,7 +30,7 @@ def read_snapshots():
                 else:
                     collection[snapshot] = 1
 
-    return (pass_snapshots, fail_snapshots)   
+    return (enum_snapshots, inv_snapshots, pass_snapshots, fail_snapshots)   
 
 
 def compute_scores(use_complete_score, pass_snapshots, fail_snapshots):
@@ -52,15 +57,14 @@ def main():
     if len(sys.argv) > 1 and sys.argv[1] == "short-score":
         use_complete_score = False
 
-    (pass_snapshots, fail_snapshots) = read_snapshots()
+    (enum_snapshots, inv_snapshots, pass_snapshots, fail_snapshots) = read_snapshots()
     snapshot_scores = compute_scores(use_complete_score, pass_snapshots, fail_snapshots)
 
     with open("snapshots-suspiciousness-score.csv", "w") as f:
         for snapshot, score in snapshot_scores.items():
-            # source = "both" if snapshot in enum_snapshots and snapshot in inv_snapshots \
-            #     else "enum" if snapshot in enum_snapshots else "inv"
-            # f.write(f"{snapshot[:3]},{score},{source}\n")
-            f.write(f"{snapshot[:3]},{score}\n")
+            source = "both" if snapshot in enum_snapshots and snapshot in inv_snapshots \
+                else "enum" if snapshot in enum_snapshots else "inv"
+            f.write(f"{snapshot[:3]},{score},{source}\n")
         f.close()
 
 
