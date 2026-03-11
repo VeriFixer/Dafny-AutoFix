@@ -50,6 +50,7 @@ public sealed class EnumerationTraceBuilder : Visitor
         InstrumentLine(blockStmt.StartToken, blockStmt);
         foreach (var stmt in blockStmt.Body) {
             _newBlockBody.Add(stmt);
+            if (stmt is PrintStmt) continue;
             HandleStatement(stmt);
             InstrumentLine(stmt.EndToken, stmt);
         }
