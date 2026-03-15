@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../dafny/source/DafnyLanguageServer/DafnyLanguageServer.csproj" />
+    <ProjectReference Include="../dafny/Source/DafnyLanguageServer/DafnyLanguageServer.csproj" />
   </ItemGroup>
 
 </Project>

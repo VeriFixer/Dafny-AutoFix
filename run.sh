@@ -70,7 +70,8 @@ infer_invariants() {
         --no-verify --allow-warnings \
         --solver-path ./dafny/Binaries/z3 > "$trace_output_file"
 
-    sed -i '' '1,2d' "$trace_output_file" # remove output relative to verification
+    sed '1,2d' "$trace_output_file" > "${trace_output_file}.tmp" 
+    mv "${trace_output_file}.tmp" "$trace_output_file"
     java -cp $DAIKONDIR/daikon.jar daikon.Daikon "$trace_output_file" --format Simplify > "$inv_output_file"
 }
 
@@ -83,7 +84,8 @@ generate_snapshots() {
         --plugin $PLUGIN,"snap $violation_line $related_location_line" \
         --no-verify --allow-warnings \
         --solver-path ./dafny/Binaries/z3 > snapshots.csv
-    sed -i '' '1,2d' snapshots.csv # remove output relative to verification
+    sed '1,2d' snapshots.csv > snapshots.tmp 
+    mv snapshots.tmp snapshots.csv
 }
 
 # ------------------------------------------------------------------------------ Main

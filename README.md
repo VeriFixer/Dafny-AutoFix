@@ -28,7 +28,7 @@ chmod 755 z3
 
 3. **Build plugin**
 ```
-cd snapshot-generator && dotnet build
+cd autofix && dotnet build
 ```
 
 4. **Run fault localization**
