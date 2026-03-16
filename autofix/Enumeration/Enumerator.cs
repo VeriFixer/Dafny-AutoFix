@@ -1,4 +1,5 @@
 ﻿using Microsoft.Dafny;
+using Microsoft.Z3;
 using Type = Microsoft.Dafny.Type;
 
 namespace AutoFix.Enumeration;
@@ -281,5 +282,57 @@ public class Enumerator() : IdentifierAvailabilityScanner(true)
         }
         
         return false;
+    }
+    
+    static bool AreEquivalent(Context ctx, BoolExpr expr1, BoolExpr expr2) {
+        var solver = ctx.MkSolver();
+        solver.Add(ctx.MkNot(ctx.MkEq(expr1, expr2)));
+        return solver.Check() == Status.UNSATISFIABLE;
+    }
+
+    static bool IsImpliedByAny(Context ctx, BoolExpr expr, List<BoolExpr> keptExprs) {
+        foreach (var kept in keptExprs) {
+            var solver = ctx.MkSolver();
+            // Check if kept ==> expr is a tautology, i.e., Not(kept ==> expr) is unsat
+            solver.Add(ctx.MkNot(ctx.MkImplies(kept, expr)));
+            if (solver.Check() == Status.UNSATISFIABLE)
+                return true;
+        }
+        return false;
+    }
+
+    static List<BoolExpr> ImpliesAny(Context ctx, BoolExpr expr, List<BoolExpr> keptExprs) {
+        var uniqueExprs = new List<BoolExpr> { expr };
+        
+        foreach (var kept in keptExprs) {
+            var solver = ctx.MkSolver();
+            // Check if expr ==> kept is a tautology, i.e., Not(expr ==> kept) is unsat
+            solver.Add(ctx.MkNot(ctx.MkImplies(expr, kept)));
+            if (solver.Check() == Status.SATISFIABLE)
+                uniqueExprs.Add(kept);
+        }
+        return uniqueExprs;
+    }
+
+    static List<BoolExpr> PruneExpressions(Context ctx, List<BoolExpr> expressions) {
+        var uniqueExprs = new List<BoolExpr>();
+        
+        foreach (var expr in expressions) {
+            bool isRedundant = false;
+            // Check for equivalence or implication
+            foreach (var kept in uniqueExprs) {
+                if (AreEquivalent(ctx, expr, kept)) {
+                    isRedundant = true;
+                    break;
+                }
+                if (IsImpliedByAny(ctx, expr, uniqueExprs)) {
+                    isRedundant = true;
+                    break;
+                }
+            }
+            if (!isRedundant)
+                uniqueExprs = ImpliesAny(ctx, expr, uniqueExprs);
+        }
+        return uniqueExprs;
     }
 }
