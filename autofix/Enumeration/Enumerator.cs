@@ -349,9 +349,9 @@ public class Enumerator() : IdentifierAvailabilityScanner(true)
                 uniqueExprs = ImpliesAny(ctx, z3BoolExpr, uniqueExprs);
         }
         
-        ctx.Dispose();
         SnapshotGenerator.ProgramAbstractions = SnapshotGenerator.ProgramAbstractions
             .Where(expr => !dict.TryGetValue(expr, out var z3Expr) || uniqueExprs.Contains(z3Expr))
             .ToList();
+        ctx.Dispose();
     }
 }
