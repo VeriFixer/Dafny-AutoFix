@@ -84,7 +84,7 @@ public class SnapshotGenerator(ErrorReporter reporter) : Rewriter(reporter)
     /// -------------------------
     /// Enumeration
     /// -------------------------
-    public static readonly List<Expression> ProgramAbstractions = [];
+    public static List<Expression> ProgramAbstractions = [];
 
     public override void PostResolve(ModuleDefinition module) {
         if (module.Name != "_module")  // only visits the default module, and all the other one from there

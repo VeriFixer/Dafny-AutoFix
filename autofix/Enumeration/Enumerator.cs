@@ -74,6 +74,7 @@ public class Enumerator() : IdentifierAvailabilityScanner(true)
         
         base.HandleMethod(faultyMethod);
         CollectBoolExprsFromIntegers();
+        PruneExpressions();
     }
 
     protected override void HandleExpression(Expression expr) {
@@ -284,55 +285,67 @@ public class Enumerator() : IdentifierAvailabilityScanner(true)
         return false;
     }
     
-    static bool AreEquivalent(Context ctx, BoolExpr expr1, BoolExpr expr2) {
+    private static bool AreEquivalent(Context ctx, BoolExpr expr1, BoolExpr expr2) {
         var solver = ctx.MkSolver();
         solver.Add(ctx.MkNot(ctx.MkEq(expr1, expr2)));
         return solver.Check() == Status.UNSATISFIABLE;
     }
 
-    static bool IsImpliedByAny(Context ctx, BoolExpr expr, List<BoolExpr> keptExprs) {
-        foreach (var kept in keptExprs) {
-            var solver = ctx.MkSolver();
-            // Check if kept ==> expr is a tautology, i.e., Not(kept ==> expr) is unsat
-            solver.Add(ctx.MkNot(ctx.MkImplies(kept, expr)));
-            if (solver.Check() == Status.UNSATISFIABLE)
-                return true;
-        }
-        return false;
+    private static bool IsImpliedBy(Context ctx, BoolExpr expr1, BoolExpr expr2) {
+        var solver = ctx.MkSolver();
+        // Check if expr2 ==> expr1 is a tautology, i.e., Not(expr2 ==> expr1) is unsat
+        solver.Add(ctx.MkNot(ctx.MkImplies(expr2, expr1)));
+        return solver.Check() == Status.UNSATISFIABLE;
     }
 
-    static List<BoolExpr> ImpliesAny(Context ctx, BoolExpr expr, List<BoolExpr> keptExprs) {
-        var uniqueExprs = new List<BoolExpr> { expr };
+    private static HashSet<BoolExpr> ImpliesAny(Context ctx, BoolExpr expr, HashSet<BoolExpr> keptExprs) {
+        var uniqueExprs = new HashSet<BoolExpr> { expr };
         
         foreach (var kept in keptExprs) {
             var solver = ctx.MkSolver();
             // Check if expr ==> kept is a tautology, i.e., Not(expr ==> kept) is unsat
             solver.Add(ctx.MkNot(ctx.MkImplies(expr, kept)));
-            if (solver.Check() == Status.SATISFIABLE)
+            if (solver.Check() == Status.SATISFIABLE) // does not imply
                 uniqueExprs.Add(kept);
         }
         return uniqueExprs;
     }
 
-    static List<BoolExpr> PruneExpressions(Context ctx, List<BoolExpr> expressions) {
-        var uniqueExprs = new List<BoolExpr>();
+    private static void PruneExpressions() {
+        var ctx = new Context();
+        var uniqueExprs = new HashSet<BoolExpr>();
+        var dict = new Dictionary<Expression, BoolExpr>();
         
-        foreach (var expr in expressions) {
-            bool isRedundant = false;
+        foreach (var expr in SnapshotGenerator.ProgramAbstractions) {
+            var z3Expr = Z3Parser.Parse(ctx, expr);
+            if (z3Expr == null || z3Expr is not BoolExpr z3BoolExpr) continue;
+            if (z3Expr.Simplify() == ctx.MkTrue() || z3Expr.Simplify() == ctx.MkFalse())
+                continue;
+            dict.Add(expr, z3BoolExpr);
+            
+            var isRedundant = false;
             // Check for equivalence or implication
             foreach (var kept in uniqueExprs) {
-                if (AreEquivalent(ctx, expr, kept)) {
+                if (AreEquivalent(ctx, z3BoolExpr, kept)) {
+                    // we want to keep the simpler expression
+                    if (z3BoolExpr.ToString().Length < kept.ToString().Length) {
+                        uniqueExprs.Remove(kept);
+                        uniqueExprs.Add(z3BoolExpr);
+                    }
                     isRedundant = true;
                     break;
                 }
-                if (IsImpliedByAny(ctx, expr, uniqueExprs)) {
+                if (IsImpliedBy(ctx, z3BoolExpr, kept)) {
                     isRedundant = true;
                     break;
                 }
             }
             if (!isRedundant)
-                uniqueExprs = ImpliesAny(ctx, expr, uniqueExprs);
+                uniqueExprs = ImpliesAny(ctx, z3BoolExpr, uniqueExprs);
         }
-        return uniqueExprs;
+        
+        SnapshotGenerator.ProgramAbstractions = SnapshotGenerator.ProgramAbstractions
+            .Where(expr => !dict.TryGetValue(expr, out var z3Expr) || uniqueExprs.Contains(z3Expr))
+            .ToList();
     }
 }
