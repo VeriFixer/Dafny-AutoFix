@@ -1,0 +1,9 @@
+.DS_Store
+obj/*
+
+*.dfy
+*.txt
+*.csv
+*.dtrace
+*.inv.gz
+*.inv
