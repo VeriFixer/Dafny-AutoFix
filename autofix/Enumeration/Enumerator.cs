@@ -288,14 +288,18 @@ public class Enumerator() : IdentifierAvailabilityScanner(true)
     private static bool AreEquivalent(Context ctx, BoolExpr expr1, BoolExpr expr2) {
         var solver = ctx.MkSolver();
         solver.Add(ctx.MkNot(ctx.MkEq(expr1, expr2)));
-        return solver.Check() == Status.UNSATISFIABLE;
+        var areEquivalent = solver.Check() == Status.UNSATISFIABLE;
+        solver.Dispose();
+        return areEquivalent;
     }
 
     private static bool IsImpliedBy(Context ctx, BoolExpr expr1, BoolExpr expr2) {
         var solver = ctx.MkSolver();
         // Check if expr2 ==> expr1 is a tautology, i.e., Not(expr2 ==> expr1) is unsat
         solver.Add(ctx.MkNot(ctx.MkImplies(expr2, expr1)));
-        return solver.Check() == Status.UNSATISFIABLE;
+        var isImpliedBy = solver.Check() == Status.UNSATISFIABLE;
+        solver.Dispose();
+        return isImpliedBy;
     }
 
     private static HashSet<BoolExpr> ImpliesAny(Context ctx, BoolExpr expr, HashSet<BoolExpr> keptExprs) {
@@ -307,6 +311,7 @@ public class Enumerator() : IdentifierAvailabilityScanner(true)
             solver.Add(ctx.MkNot(ctx.MkImplies(expr, kept)));
             if (solver.Check() == Status.SATISFIABLE) // does not imply
                 uniqueExprs.Add(kept);
+            solver.Dispose();
         }
         return uniqueExprs;
     }
@@ -344,6 +349,7 @@ public class Enumerator() : IdentifierAvailabilityScanner(true)
                 uniqueExprs = ImpliesAny(ctx, z3BoolExpr, uniqueExprs);
         }
         
+        ctx.Dispose();
         SnapshotGenerator.ProgramAbstractions = SnapshotGenerator.ProgramAbstractions
             .Where(expr => !dict.TryGetValue(expr, out var z3Expr) || uniqueExprs.Contains(z3Expr))
             .ToList();
