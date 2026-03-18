@@ -18,8 +18,8 @@ def read_snapshots():
                 current_test_case_snapshots = set()
             elif passing != None:
                 full_snapshot = tuple(line.strip().split(';'))
-                snapshot = full_snapshot[:5]
-                collection = enum_snapshots if full_snapshot[5] == "enum" else inv_snapshots
+                snapshot = full_snapshot[:6]
+                collection = enum_snapshots if full_snapshot[6] == "enum" else inv_snapshots
                 collection.add(snapshot)
                 collection = pass_snapshots if passing else fail_snapshots
                 if snapshot in current_test_case_snapshots:
@@ -37,8 +37,8 @@ def compute_scores(use_complete_score, pass_snapshots, fail_snapshots):
     scores = {}
 
     for snapshot in set(pass_snapshots) | set(fail_snapshots):
-        control_dependence_score = float(snapshot[3]) if float(snapshot[3]) != 0 else 0.00001
-        expression_dependence_score = float(snapshot[4]) if float(snapshot[4]) != 0 else 0.00001
+        control_dependence_score = float(snapshot[4]) if float(snapshot[4]) != 0 else 0.00001
+        expression_dependence_score = float(snapshot[5]) if float(snapshot[5]) != 0 else 0.00001
         alpha = 1 / 3
         beta = 2 / 3
         gamma = 1
@@ -64,7 +64,11 @@ def main():
         for snapshot, score in snapshot_scores.items():
             source = "both" if snapshot in enum_snapshots and snapshot in inv_snapshots \
                 else "enum" if snapshot in enum_snapshots else "inv"
-            f.write(f"{snapshot[:3]},{score},{source}\n")
+            f.write(f"{snapshot[:4]},{score},{source}\n")
+        f.close()
+    with open("lines-suspiciousness.csv", "w") as f:
+        for snapshot, score in snapshot_scores.items():
+            f.write(f"{snapshot[0]}\n")
         f.close()
 
 

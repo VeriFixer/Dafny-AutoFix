@@ -105,6 +105,7 @@ public sealed class EnumerationTraceBuilder : Visitor
                 mapSafetyCheckedExpr != null ? Expression.CreateAnd(mapSafetyCheckedExpr, expr.Item1) : null;
             
             
+            var lineElement = Expression.CreateIntLiteral(token, token.line);
             var posElement = Expression.CreateIntLiteral(token, token.pos);
             var exprStrElement = AstUtils.CreateStringLiteral(token, expr.Item1.ToString());
             var snapshotCDep = SnapshotGenerator.CDepAnalyzer?.ComputeCDep(token.pos, placementRefStmt) ?? 0.0;
@@ -114,8 +115,9 @@ public sealed class EnumerationTraceBuilder : Visitor
             var delimElement1 = AstUtils.CreateStringLiteral(token, ";");
             var delimElement2 = AstUtils.CreateStringLiteral(token, ";enum\\n");
             List<Expression> printElements = [
-                posElement, delimElement1, exprStrElement, delimElement1, safetyCheckedExpr ?? expr.Item1, 
-                delimElement1, snapshotCDepElement, delimElement1, snapshotEDepElement, delimElement2
+                lineElement, delimElement1, posElement, delimElement1, 
+                exprStrElement, delimElement1, safetyCheckedExpr ?? expr.Item1, delimElement1, 
+                snapshotCDepElement, delimElement1, snapshotEDepElement, delimElement2
             ];
             var newStmt = new PrintStmt(token, printElements);
             _newBlockBody.Add(newStmt);

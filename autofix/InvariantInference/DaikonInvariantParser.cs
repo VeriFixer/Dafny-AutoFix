@@ -7,7 +7,7 @@ namespace AutoFix.InvariantInference;
 public class DaikonInvariantParser : Visitor
 {
     public static readonly List<(string, string)> TypeInfo = ImportTypeInfo(); // (var name, var type)
-    private readonly List<(Expression, int, Statement)> _invariantsPlacement = []; // (invariant, location, statement after which invariant should be inserted)
+    private readonly List<(Expression, int, int, Statement)> _invariantsPlacement = []; // (invariant, line, location, statement after which invariant should be inserted)
     public List<Expression> AllInvariants => _invariantsPlacement.Select(i => i.Item1).ToList();
     
     private readonly List<PrintStmt> _newPrintStmts = [];
@@ -167,22 +167,22 @@ public class DaikonInvariantParser : Visitor
     /// Instrumentation
     /// -------------------------
     private void FindInvariantPlacement(int location, Expression invariantExpr) {
-        if (_invariantsPlacement.Any(i => i.Item2 == location && i.Item1.ToString() == invariantExpr.ToString()))
+        if (_invariantsPlacement.Any(i => i.Item3 == location && i.Item1.ToString() == invariantExpr.ToString()))
             return;
         var faultyMethod = AutoFix.FaultyMethod;
         if (faultyMethod == null || faultyMethod.Body == null) return;
         
         if (location == faultyMethod.Body.StartToken.pos) {
-            _invariantsPlacement.Add((invariantExpr, location, faultyMethod.Body));
+            _invariantsPlacement.Add((invariantExpr, faultyMethod.Body.StartToken.line, location, faultyMethod.Body));
         } else if (location == faultyMethod.Body.EndToken.pos) {
-            _invariantsPlacement.Add((invariantExpr, location, faultyMethod.Body));
+            _invariantsPlacement.Add((invariantExpr, faultyMethod.Body.EndToken.line, location, faultyMethod.Body));
         } else {
             _findStmtPred = stmt => stmt.EndToken.pos == location || (stmt is BlockStmt bStmt && bStmt.StartToken.pos == location);
             HandleMethod(faultyMethod);
             var refStmt = _targetStmt.Item2 == -1 ? 
                 _targetStmt.Item1 : _targetStmt.Item1?.Body[_targetStmt.Item2];
             if (refStmt != null)
-                _invariantsPlacement.Add((invariantExpr, location, refStmt));
+                _invariantsPlacement.Add((invariantExpr, refStmt.EndToken.line, location, refStmt));
             _findStmtPred = null;
             _targetStmt = (null, -1);
         }
@@ -192,26 +192,27 @@ public class DaikonInvariantParser : Visitor
         var faultyMethod = AutoFix.FaultyMethod;
         if (faultyMethod == null || faultyMethod.Body == null) return;
 
-        foreach (var (inv, location, placement) in _invariantsPlacement) {
+        foreach (var (inv, line, location, placement) in _invariantsPlacement) {
             if (ReferenceEquals(placement, faultyMethod.Body)) {
                 if (location == faultyMethod.Body.StartToken.pos) {
-                    faultyMethod.Body.Body.Insert(0, PrintInvariant(inv, location, placement));
+                    faultyMethod.Body.Body.Insert(0, PrintInvariant(inv, line, location, placement));
                 } else {
-                    faultyMethod.Body.Body.Add(PrintInvariant(inv, location, placement));
+                    faultyMethod.Body.Body.Add(PrintInvariant(inv, line, location, placement));
                 }
             } else {
                 _findStmtPred = stmt => ReferenceEquals(stmt, placement);
                 HandleMethod(faultyMethod);
                 if (_targetStmt.Item1 == null)
                     continue;
-                _targetStmt.Item1.Body.Insert(_targetStmt.Item2 + 1, PrintInvariant(inv, location, placement));
+                _targetStmt.Item1.Body.Insert(_targetStmt.Item2 + 1, PrintInvariant(inv, line, location, placement));
                 _findStmtPred = null;
                 _targetStmt = (null, -1);
             }
         }
     }
 
-    private PrintStmt PrintInvariant(Expression invariantExpr, int location, Statement placementRefStmt) {
+    private PrintStmt PrintInvariant(Expression invariantExpr, int line, int location, Statement placementRefStmt) {
+        var lineElement = Expression.CreateIntLiteral(null, line);
         var posElement = Expression.CreateIntLiteral(null, location);
         var exprStrElement = AstUtils.CreateStringLiteral(null, invariantExpr.ToString());
         var snapshotCDep = SnapshotGenerator.CDepAnalyzer?.ComputeCDep(location, placementRefStmt) ?? 0.0;
@@ -219,8 +220,9 @@ public class DaikonInvariantParser : Visitor
         var delimElement1 = AstUtils.CreateStringLiteral(null, ";");
         var delimElement2 = AstUtils.CreateStringLiteral(null, ";inv\\n");
         List<Expression> printElements = [
-            posElement, delimElement1, exprStrElement, delimElement1, 
-            invariantExpr, delimElement1, snapshotCDepElement, delimElement2
+            lineElement, delimElement1, posElement, delimElement1, 
+            exprStrElement, delimElement1, invariantExpr, delimElement1, 
+            snapshotCDepElement, delimElement2
         ];
         
         var printStmt = new PrintStmt(null, printElements);
