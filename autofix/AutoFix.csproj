@@ -8,5 +8,15 @@
   <ItemGroup>
     <ProjectReference Include="../dafny/Source/DafnyLanguageServer/DafnyLanguageServer.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <Reference Include="Microsoft.Z3">
+      <HintPath>lib\z3-4.14.1-x64-glibc-2.35\bin\Microsoft.Z3.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <None Update="lib/z3-4.14.1-x64-glibc-2.35/bin/libz3.so">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>libz3.so</Link>
+    </None>
+  </ItemGroup>
 
 </Project>

@@ -25,18 +25,24 @@ mv z3-4.12.1 z3
 chmod 755 z3
 ```
 
+3. **Configure dotnet Z3 binding** (requires glibc version 2.35 or more recent)
+```
+wget -P ./autofix/lib https://github.com/Z3Prover/z3/releases/download/z3-4.14.1/z3-4.14.1-x64-glibc-2.35.zip
+unzip -d ./autofix/lib/ ./autofix/lib/z3-4.14.1-x64-glibc-2.35.zip
+```
 
-3. **Build plugin**
+
+4. **Build plugin**
 ```
 cd autofix && dotnet build
 ```
 
-4. **Run fault localization**
+5. **Run fault localization**
 ```
 ./run.sh program_file
 ```
 
-5. **Analyze suspicious program states**
+6. **Analyze suspicious program states**
 
 Open the `snapshots-suspiciousness-score.csv` file and analyze it. 
 
