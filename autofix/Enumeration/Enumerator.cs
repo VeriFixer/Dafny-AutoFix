@@ -40,7 +40,9 @@ public class Enumerator() : IdentifierAvailabilityScanner(true)
         base.HandleMemberDecls(decl);
     }
     
-    protected override void HandleMethod(Method method) {
+    protected override void HandleMethod(MethodOrConstructor methodOrConstructor) {
+        if (methodOrConstructor is not Method method) return;
+        
         // find the faulty method, i.e., where the violation occurs  
         if (method.StartToken.line <= AutoFix.ViolationLine &&
             method.EndToken.line >= AutoFix.ViolationLine) {

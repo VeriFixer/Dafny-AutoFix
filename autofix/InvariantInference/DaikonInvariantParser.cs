@@ -72,7 +72,9 @@ public class DaikonInvariantParser : Visitor
         base.HandleMemberDecls(decl);
     }
     
-    protected override void HandleMethod(Method method) {
+    protected override void HandleMethod(MethodOrConstructor methodOrConstructor) {
+        if (methodOrConstructor is not Method method) return;
+        
         // distinguish passing from failing test execution
         if (_enclosingClassName == "_default" && method.Name == "Passing")
             AutoFix.PassingTestsMethod = method;
@@ -232,8 +234,8 @@ public class DaikonInvariantParser : Visitor
 
     public void AddEDepToInvariantPrints() {
         foreach (var printStmt in _newPrintStmts) {
+            if (printStmt.Args.Count < 5) continue;
             var invariantExpr = printStmt.Args[4];
-            if (invariantExpr == null) continue;
             var snapshotEDep = SnapshotGenerator.EDepAnalyzer?.ComputeEDep(invariantExpr) ?? 0.0;
             var snapshotEDepElement = Expression.CreateRealLiteral(null, BigDec.FromString($"{snapshotEDep}".Replace(',', '.')));
             var delimElement = AstUtils.CreateStringLiteral(null, ";");

@@ -51,7 +51,7 @@ public class IdentifierAvailabilityScanner(bool multipleModule = false) : Visito
         InsideFaultyTopLevelDecl = false;
     }
     
-    protected override void HandleMethod(Method method) {
+    protected override void HandleMethod(MethodOrConstructor method) {
         if (!(method.StartToken.line <= AutoFix.ViolationLine &&
               method.EndToken.line >= AutoFix.ViolationLine))
             return;

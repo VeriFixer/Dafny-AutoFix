@@ -54,7 +54,8 @@ public sealed class EnumerationTraceBuilder : Visitor
             HandleStatement(stmt);
             InstrumentLine(stmt.EndToken, stmt);
         }
-        blockStmt.Body = _newBlockBody;
+        blockStmt.Body.Clear();
+        blockStmt.Body.AddRange(_newBlockBody);
         _newBlockBody = prevNewBlock;
     }
 

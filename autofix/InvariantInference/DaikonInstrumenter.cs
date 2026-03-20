@@ -24,9 +24,9 @@ public class DaikonInstrumenter(List<Identifier> identifierAvailability) : Visit
         AddMethodDeclaration(faultyMethod);
         AddDummyMethodsDeclarations();
         if (mainMethod.Body == null) {
-            mainMethod.Body = new BlockStmt(mainMethod.Origin, _newStmts);
+            mainMethod.SetBody(new BlockStmt(mainMethod.Origin, _newStmts));
         } else {
-            mainMethod.Body.Body = _newStmts.Concat(mainMethod.Body.Body).ToList();  
+            mainMethod.Body.Body.InsertRange(0, _newStmts);
         }
         AddMethodTracePoints(faultyMethod);
         AddDummyMethodsTracePoints();
@@ -38,7 +38,9 @@ public class DaikonInstrumenter(List<Identifier> identifierAvailability) : Visit
         decl.Members.AddRange(_newMethods);
     }
     
-    protected override void HandleMethod(Method method) {
+    protected override void HandleMethod(MethodOrConstructor methodOrConstructor) {
+        if (methodOrConstructor is not Method method) return;
+        
         // find Main, i.e., entrypoint, where the faulty method is being exercised
         if (method.Name == "Main")
             AutoFix.MainMethod = method;
@@ -76,7 +78,8 @@ public class DaikonInstrumenter(List<Identifier> identifierAvailability) : Visit
             InstrumentLine(stmt.EndToken);
         }
         
-        blockStmt.Body = _newBlockBody;
+        blockStmt.Body.Clear();
+        blockStmt.Body.AddRange(_newBlockBody);
         _newBlockBody = prevNewBlock;
     }
 
@@ -251,9 +254,9 @@ public class DaikonInstrumenter(List<Identifier> identifierAvailability) : Visit
         // Add points at the method's entrance
         var newStmts = AddMethodTracePoints(method, false);
         if (method.Body == null) {
-            method.Body = new BlockStmt(method.Origin, newStmts);
+            method.SetBody(new BlockStmt(method.Origin, newStmts));
         } else {
-            method.Body.Body = newStmts.Concat(method.Body.Body).ToList();
+            method.Body.Body.InsertRange(0, newStmts);
         }
         // Add points at the method's exit(s)
         newStmts = AddMethodTracePoints(method, true);

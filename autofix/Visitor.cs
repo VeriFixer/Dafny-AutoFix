@@ -118,7 +118,7 @@ public abstract class Visitor
 
     protected virtual void HandleMemberDecls(TopLevelDeclWithMembers decl) {
         foreach (var member in decl.Members) {
-            if (member is Method m) { // includes constructor
+            if (member is MethodOrConstructor m) {
                 HandleMethod(m);  
             } else if (member is Function func) { // includes predicate
                 HandleFunction(func);
@@ -129,7 +129,7 @@ public abstract class Visitor
         }
     }
 
-    protected virtual void HandleMethod(Method method) {
+    protected virtual void HandleMethod(MethodOrConstructor method) {
         if (method.Body == null) return;
         HandleBlock(method.Body);
         
@@ -159,13 +159,17 @@ public abstract class Visitor
         }
     }
     
-    protected virtual void HandleBlock(BlockStmt blockStmt) {
-        if (blockStmt is DividedBlockStmt dBlockStmt) {
+    protected virtual void HandleBlock(BlockLikeStmt blockLStmt) {
+        if (blockLStmt is DividedBlockStmt dBlockStmt) {
             HandleBlock(dBlockStmt.BodyInit);
             HandleBlock(dBlockStmt.BodyProper);
-        } else {
-            HandleBlock(blockStmt.Body);
+        } else if (blockLStmt is BlockStmt blockStmt) {
+            HandleBlock(blockStmt);
         }
+    }
+    
+    protected virtual void HandleBlock(BlockStmt blockStmt) {
+        HandleBlock(blockStmt.Body.ToList());
     }
     
     protected virtual void HandleBlock(List<Statement> statements) {
@@ -174,7 +178,7 @@ public abstract class Visitor
         }
     }
     
-    protected virtual void VisitStatement(BlockStmt blockStmt) {
+    protected virtual void VisitStatement(BlockLikeStmt blockStmt) {
         HandleBlock(blockStmt);
         
         if (blockStmt is DividedBlockStmt dBlockStmt) {
@@ -245,7 +249,8 @@ public abstract class Visitor
     }
     
     protected virtual void VisitStatement(WhileStmt whileStmt) {
-        HandleExpression(whileStmt.Guard);
+        if (whileStmt.Guard != null)
+            HandleExpression(whileStmt.Guard);
         if (whileStmt.Body != null) 
             HandleBlock(whileStmt.Body);
         VisitStatement(whileStmt as LoopStmt);
@@ -253,8 +258,10 @@ public abstract class Visitor
 
     protected virtual void VisitStatement(ForLoopStmt forStmt) {
         HandleExpression(forStmt.Start);
-        HandleExpression(forStmt.End);
-        HandleBlock(forStmt.Body);
+        if (forStmt.End != null)
+            HandleExpression(forStmt.End);
+        if (forStmt.Body != null)
+            HandleBlock(forStmt.Body);
         VisitStatement(forStmt as LoopStmt);
     }
 
@@ -306,7 +313,8 @@ public abstract class Visitor
     }
 
     protected virtual void VisitStatement(HideRevealStmt hRStmt) {
-        HandleExprList(hRStmt.Exprs);
+        if (hRStmt.Exprs != null)
+            HandleExprList(hRStmt.Exprs);
     }
 
     protected virtual void VisitStatement(BlockByProofStmt bBpStmt) {
@@ -498,7 +506,7 @@ public abstract class Visitor
     }
 
     protected virtual void VisitExpression(OldExpr oldExpr) {
-        HandleExpression(oldExpr.E);
+        HandleExpression(oldExpr.Expr);
     }
     
     protected virtual void VisitExpression(UnchangedExpr unchExpr) {
@@ -548,18 +556,17 @@ public abstract class Visitor
     protected virtual void HandleAssignmentRhs(AssignmentRhs aRhs) {
         if (aRhs is ExprRhs exprRhs) {
             HandleExpression(exprRhs.Expr);
-        } else if (aRhs is TypeRhs tpRhs) {
-            var elInit = tpRhs.ElementInit;
             
-            if (tpRhs.ArrayDimensions != null) {
-                HandleExprList(tpRhs.ArrayDimensions);
-            } if (elInit != null) {
-                HandleExpression(elInit);
-            } if (tpRhs.InitDisplay != null) {
-                HandleExprList(tpRhs.InitDisplay);
-            } if (tpRhs.Bindings != null) {
-                HandleActualBindings(tpRhs.Bindings);
-            }
+        } else if (aRhs is AllocateArray allArrayRhs) {
+            HandleExprList(allArrayRhs.ArrayDimensions);
+            if (allArrayRhs.ElementInit != null)
+                HandleExpression(allArrayRhs.ElementInit);
+            if (allArrayRhs.InitDisplay != null)
+                HandleExprList(allArrayRhs.InitDisplay);
+            
+        } else if (aRhs is AllocateClass allClassRhs) {
+            if (allClassRhs.Bindings != null)
+                HandleActualBindings(allClassRhs.Bindings);
         }
     }
 

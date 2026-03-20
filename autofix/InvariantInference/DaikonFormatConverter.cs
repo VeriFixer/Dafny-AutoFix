@@ -131,7 +131,8 @@ public static class DaikonFormatConverter
             Expression.CreateIntLiteral(token, 0), listLengthExpr,
             true, [], new Specification<Expression>(),
             new Specification<FrameExpression>(),
-            new BlockStmt(token, listIndexPrinter != null ? [listIndexPrinter] : []), null);
+            new BlockStmt(token, listIndexPrinter != null ? [listIndexPrinter] : []), 
+            [], null);
         
         var openArrayElem = AstUtils.CreateStringLiteral(token, "[ ");
         var printOpenArray = new PrintStmt(token, [openArrayElem]);
@@ -184,7 +185,7 @@ public static class DaikonFormatConverter
                 Expression.CreateIntLiteral(token, 0), arrLengthExprs[i],
                 true, [], new Specification<Expression>(),
                 new Specification<FrameExpression>(),
-                new BlockStmt(token, loopBody), null);
+                new BlockStmt(token, loopBody), [], null);
 
             if (i == 0 && !_shouldEscapeQuotes) {
                 closeArrayElem = AstUtils.CreateStringLiteral(token, $"]");
