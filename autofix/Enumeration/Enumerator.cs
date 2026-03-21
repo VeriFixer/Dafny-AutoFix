@@ -342,13 +342,16 @@ public class Enumerator() : IdentifierAvailabilityScanner(true)
                     isRedundant = true;
                     break;
                 }
-                if (IsImpliedBy(ctx, z3BoolExpr, kept)) {
-                    isRedundant = true;
-                    break;
-                }
+                // I have meanwhile concluded that, even if an expression is implied by another,
+                // it may still be more accurate at capturing the faulty program state
+                // if (IsImpliedBy(ctx, z3BoolExpr, kept)) {
+                //     isRedundant = true;
+                //     break;
+                // }
             }
             if (!isRedundant)
-                uniqueExprs = ImpliesAny(ctx, z3BoolExpr, uniqueExprs);
+                uniqueExprs.Add(z3BoolExpr);
+                // uniqueExprs = ImpliesAny(ctx, z3BoolExpr, uniqueExprs);
         }
         
         SnapshotGenerator.ProgramAbstractions = SnapshotGenerator.ProgramAbstractions
