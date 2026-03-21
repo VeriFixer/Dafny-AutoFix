@@ -8,28 +8,22 @@ public sealed class EnumerationTraceBuilder : Visitor
 {
     private List<Identifier> IdentifierAvailability { get; }
     private List<string> Ghosts { get; }
-    private readonly List<(Expression, int?, int?)> _exprAvailabilityScope;
-    public List<Expression> AllEnumPreds => _exprAvailabilityScope.Select(e => e.Item1).ToList();
-    
+    private readonly Dictionary<Expression, List<string>> _exprIdentifiers;
+    public List<Expression> AllEnumPreds => _exprIdentifiers.Keys.ToList();
+
+    private Expression? _exprUnderVisit;
     private List<Statement> _newBlockBody = [];
-    private int? _currentExprAvailabilityScopeStart;
-    private int? _currentExprAvailabilityScopeEnd;
-    private bool _hasGhostChild;
-    private bool _hasIdentifierChild;
     
     public EnumerationTraceBuilder(List<Identifier> identifierAvailability, List<string> ghosts) {
         IdentifierAvailability = identifierAvailability;
         Ghosts = ghosts;
-        _exprAvailabilityScope = [];
+        _exprIdentifiers = new Dictionary<Expression, List<string>>();
         // identify the scope in which each program abstraction is observable according to the scope in which its subexpressions are defined
         foreach (var expr in SnapshotGenerator.ProgramAbstractions) {
+            _exprIdentifiers[expr] = [];
+            _exprUnderVisit = expr;
             HandleExpression(expr);
-            if (!_hasGhostChild && _hasIdentifierChild) // predicates involving only literals aren't relevant since they don't abstract program state
-                _exprAvailabilityScope.Add((expr, _currentExprAvailabilityScopeStart, _currentExprAvailabilityScopeEnd));
-            _currentExprAvailabilityScopeStart = null;
-            _currentExprAvailabilityScopeEnd = null;
-            _hasGhostChild = false;
-            _hasIdentifierChild = false;
+            _exprUnderVisit = null;
         }
     }
     
@@ -60,35 +54,20 @@ public sealed class EnumerationTraceBuilder : Visitor
     }
 
     protected override void VisitExpression(NameSegment nSegExpr) {
-        DetermineIdentifierAvailability(nSegExpr.Name);
-        _hasIdentifierChild = true;
-        if (Ghosts.Contains(nSegExpr.Name))
-            _hasGhostChild = true;
+        if (_exprUnderVisit != null)
+            _exprIdentifiers[_exprUnderVisit].Add(nSegExpr.Name);
     }
 
     protected override void VisitExpression(IdentifierExpr idExpr) {
-        DetermineIdentifierAvailability(idExpr.Name);
-        _hasIdentifierChild = true;
-        if (Ghosts.Contains(idExpr.Name))
-            _hasGhostChild = true;
-    }
-    
-    protected override void VisitExpression(SuffixExpr suffixExpr) {
-        if (suffixExpr is ExprDotName)
-            _hasIdentifierChild = true;
-        base.VisitExpression(suffixExpr);
+        if (_exprUnderVisit != null)
+            _exprIdentifiers[_exprUnderVisit].Add(idExpr.Name);
     }
 
     /// -------------------------
     /// Utils
     /// -------------------------
     private void InstrumentLine(Token token, Statement placementRefStmt) {
-        var availableExprs = _exprAvailabilityScope.Where(
-            expr => 
-                (token.pos > expr.Item2 && token.pos < expr.Item3) || 
-                (expr.Item2 == null && expr.Item3 == null)
-        );
-        
+        var availableExprs = DetermineExpressionAvailability(token.pos);
         foreach (var expr in availableExprs) {
             Expression? seqSafetyCheckedExpr = null;
             Expression? mapSafetyCheckedExpr = null;
@@ -101,23 +80,23 @@ public sealed class EnumerationTraceBuilder : Visitor
             if (seqSelectSubExprs.Count > 0)
                 mapSafetyCheckedExpr = HandleMapSelectExpr(mapSelectSubExprs);
             Expression? safetyCheckedExpr = seqSafetyCheckedExpr != null ? mapSafetyCheckedExpr != null ? 
-                Expression.CreateAnd(Expression.CreateAnd(seqSafetyCheckedExpr, mapSafetyCheckedExpr), expr.Item1) : 
-                Expression.CreateAnd(seqSafetyCheckedExpr, expr.Item1) : 
-                mapSafetyCheckedExpr != null ? Expression.CreateAnd(mapSafetyCheckedExpr, expr.Item1) : null;
+                Expression.CreateAnd(Expression.CreateAnd(seqSafetyCheckedExpr, mapSafetyCheckedExpr), expr) : 
+                Expression.CreateAnd(seqSafetyCheckedExpr, expr) : 
+                mapSafetyCheckedExpr != null ? Expression.CreateAnd(mapSafetyCheckedExpr, expr) : null;
             
             
             var lineElement = Expression.CreateIntLiteral(token, token.line);
             var posElement = Expression.CreateIntLiteral(token, token.pos);
-            var exprStrElement = AstUtils.CreateStringLiteral(token, expr.Item1.ToString());
+            var exprStrElement = AstUtils.CreateStringLiteral(token, expr.ToString());
             var snapshotCDep = SnapshotGenerator.CDepAnalyzer?.ComputeCDep(token.pos, placementRefStmt) ?? 0.0;
             var snapshotCDepElement = Expression.CreateRealLiteral(null, BigDec.FromString($"{snapshotCDep}".Replace(',', '.')));
-            var snapshotEDep = SnapshotGenerator.EDepAnalyzer?.ComputeEDep(expr.Item1) ?? 0.0;
+            var snapshotEDep = SnapshotGenerator.EDepAnalyzer?.ComputeEDep(expr) ?? 0.0;
             var snapshotEDepElement = Expression.CreateRealLiteral(null, BigDec.FromString($"{snapshotEDep}".Replace(',', '.')));
             var delimElement1 = AstUtils.CreateStringLiteral(token, ";");
             var delimElement2 = AstUtils.CreateStringLiteral(token, ";enum\\n");
             List<Expression> printElements = [
                 lineElement, delimElement1, posElement, delimElement1, 
-                exprStrElement, delimElement1, safetyCheckedExpr ?? expr.Item1, delimElement1, 
+                exprStrElement, delimElement1, safetyCheckedExpr ?? expr, delimElement1, 
                 snapshotCDepElement, delimElement1, snapshotEDepElement, delimElement2
             ];
             var newStmt = new PrintStmt(token, printElements);
@@ -171,18 +150,28 @@ public sealed class EnumerationTraceBuilder : Visitor
         return inMapExpr;
     }
     
-    private void DetermineIdentifierAvailability(string idName) {
-        var identifier = IdentifierAvailability.Find((id) => id.Name == idName);
-        var identifierAvailabilityScopeStart = identifier?.AvailabilityStartPos;
-        var identifierAvailabilityScopeEnd = identifier?.AvailabilityEndPos;
-        
-        if (_currentExprAvailabilityScopeStart == null ||
-            (identifierAvailabilityScopeStart != null && 
-             identifierAvailabilityScopeStart > _currentExprAvailabilityScopeStart))
-            _currentExprAvailabilityScopeStart = identifierAvailabilityScopeStart;
-        if (_currentExprAvailabilityScopeEnd == null ||
-            (identifierAvailabilityScopeEnd != null && 
-             identifierAvailabilityScopeEnd < _currentExprAvailabilityScopeEnd))
-            _currentExprAvailabilityScopeEnd = identifierAvailabilityScopeEnd;
+    private List<Expression> DetermineExpressionAvailability(int pos) {
+        List<Expression> availableExprs = [];
+        foreach (var expr in SnapshotGenerator.ProgramAbstractions) {
+            if (!_exprIdentifiers.TryGetValue(expr, out var exprIdentifiers) || exprIdentifiers.Count == 0)
+                continue;
+            
+            var allIdentifiersAreAvailable = true;
+            foreach (var id in exprIdentifiers) {
+                if (Ghosts.Contains(id)) {
+                    allIdentifiersAreAvailable = false;
+                    break;
+                }
+                var identifiers = IdentifierAvailability.FindAll(i => i.Name == id);
+                if (!identifiers.Any(i => 
+                    (pos > i.AvailabilityStartPos && pos < i.AvailabilityEndPos) ||
+                    (i.AvailabilityStartPos == null && i.AvailabilityEndPos == null)))
+                    allIdentifiersAreAvailable = false;
+                if (!allIdentifiersAreAvailable) break;
+            }
+            if (allIdentifiersAreAvailable)
+                availableExprs.Add(expr);
+        }
+        return availableExprs;
     }
 }

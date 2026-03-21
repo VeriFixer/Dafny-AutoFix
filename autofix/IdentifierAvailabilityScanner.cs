@@ -31,12 +31,16 @@ public class IdentifierAvailabilityScanner(bool multipleModule = false) : Visito
         }
         
         foreach (var member in decl.Members) {
-            if (member is Method m) { // includes constructor
+            if (member is Method m) {
                 HandleMethod(m);  
             } else if (member is Function func) { // includes predicate
                 HandleFunction(func);
             } else if (member is Field f) {
-                if (InsideDefaultClass || InsideFaultyTopLevelDecl) {
+                if ((InsideDefaultClass || InsideFaultyTopLevelDecl) && 
+                    !IdentifierAvailability.Any(id =>
+                        id.Name == f.Name && id.AvailabilityStartPos == null &&
+                        id.AvailabilityEndPos == null)) 
+                {
                     var identifier = new Identifier(null, f, f.Type, null, null);
                     IdentifierAvailability.Add(identifier);
                 }
@@ -58,6 +62,10 @@ public class IdentifierAvailabilityScanner(bool multipleModule = false) : Visito
         _foundFaultyMethod = true;
         
         foreach (var input in method.Ins) {
+            if (IdentifierAvailability.Any(id =>
+                    id.Name == input.Name && id.AvailabilityStartPos == method.StartToken.pos &&
+                    id.AvailabilityEndPos == method.EndToken.pos)) 
+                continue;
             var identifier = new Identifier(input, null, input.Type, method.StartToken.pos, method.EndToken.pos);
             IdentifierAvailability.Add(identifier);
             if (input.IsGhost)
@@ -82,7 +90,9 @@ public class IdentifierAvailabilityScanner(bool multipleModule = false) : Visito
     
     protected override void VisitStatement(ConcreteAssignStatement cAStmt) {
         foreach (var lhs in cAStmt.Lhss) {
-            if (IdentifierAvailability.Count(id => id.Name == lhs.ToString()) > 0)
+            if (IdentifierAvailability.Any(id =>
+                    id.Name == lhs.ToString() && id.AvailabilityStartPos == lhs.EndToken.pos &&
+                    id.AvailabilityEndPos == _currentScopeLimit)) 
                 continue;
             var output = _currentMethodOutputs.Find(output => output.Name == lhs.ToString());
             if (output == null)
@@ -95,6 +105,10 @@ public class IdentifierAvailabilityScanner(bool multipleModule = false) : Visito
     
     protected override void VisitStatement(VarDeclStmt vDeclStmt) {
         foreach (var lhs in vDeclStmt.Locals) {
+            if (IdentifierAvailability.Any(id =>
+                    id.Name == lhs.ToString() && id.AvailabilityStartPos == lhs.EndToken.pos &&
+                    id.AvailabilityEndPos == _currentScopeLimit)) 
+                continue;
             var identifier = new Identifier(lhs, null, lhs.Type, lhs.EndToken.pos, _currentScopeLimit);
             IdentifierAvailability.Add(identifier);
             if (vDeclStmt.IsGhost)
