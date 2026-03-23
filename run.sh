@@ -9,7 +9,8 @@
 #
 # Usage:
 # run.sh
-#   <full path to the program under test, e.g., $SCRIPT_DIR/../DafnyBench/DafnyBench/dataset/ground_truth/630-dafny_tmp_tmpz2kokaiq_Solution.dfy> 
+#   <full path to the program under test, e.g., $SCRIPT_DIR/../datasets/630-dafny_tmp_tmpz2kokaiq_Solution.dfy> 
+#   --strategy <suspiciousness score formula to use, i.e., dynamic-and-static-score or dynamic-score-only>
 #   [help]
 # ------------------------------------------------------------------------------ General utils
 
@@ -23,18 +24,31 @@ die() {
 # ------------------------------------------------------------------------------ Args e vars
 
 USAGE="Usage: ${BASH_SOURCE[0]}
-   <full path to the program under test, e.g., $SCRIPT_DIR/../DafnyBench/DafnyBench/dataset/ground_truth/630-dafny_tmp_tmpz2kokaiq_Solution.dfy>
+   <full path to the program under test, e.g., $SCRIPT_DIR/../datasets/630-dafny_tmp_tmpz2kokaiq_Solution.dfy>
+   --strategy <suspiciousness score formula to use, e.g., dynamic-and-static-score or dynamic-score-only>
    [help]"
-if [ "$#" -ne "1" ]; then
+if [ "$#" -ne "1" ] && [ "$#" -ne "3" ]; then
   die "$USAGE"
 fi
 
-if [ "$1" = "--help" ]; then
+PROGRAM=""
+STRATEGY=""
+
+if [ "$#" -eq "1" ] && [ "$1" = "--help" ]; then
     echo "$USAGE"
     exit 0
+elif [ "$#" -eq "3" ] && [ "$2" = "--strategy" ]; then
+    PROGRAM=$1
+    STRATEGY=$3
+else
+    die "$USAGE"
 fi
 
-PROGRAM=$1
+# Check whether all arguments have been initialized
+[ "$PROGRAM" != "" ]  || die "[ERROR] Missing program file argument!"
+[ "$STRATEGY" != "" ] || die "[ERROR] Missing --strategy argument!"
+[ "$STRATEGY" = "dynamic-and-static-score" ] || [ "$STRATEGY" = "dynamic-score-only" ] || die "[ERROR] Strategy should be dynamic-and-static-score or dynamic-score-only!"
+
 PLUGIN="$SCRIPT_DIR/autofix/bin/Debug/net8.0/AutoFix.dll"
 
 # ------------------------------------------------------------------------------ Utils
@@ -125,4 +139,8 @@ echo -e "$(generate_snapshots $violation_line $related_location_line)\n"
 
 # Compute the suspiciousness score of each snapshot
 echo "Computing suspiciousness scores"
-python3 compute-suspiciousness.py
+if [ "$STRATEGY" = "dynamic-and-static-score" ]; then
+    python3 compute-suspiciousness.py
+else
+    python3 compute-suspiciousness.py short-score
+fi

@@ -38,13 +38,17 @@ cd autofix && dotnet build
 ```
 
 5. **Run fault localization**
+
+Here, you must chose the strategy to be used for computing the suspiciousness score. It will either use a combination of static and dynamic measures (dynamic-and-static-score), or only a dynamic score (dynamic-score-only).
+
 ```
-./run.sh program_file
+./run.sh program_file --strategy <dynamic-and-static-score|dynamic-score-only>
 ```
 
 6. **Analyze suspicious program states**
 
-Open the `snapshots-suspiciousness-score.csv` file and analyze it. 
+Open the `snapshots-suspiciousness-score.csv` and `lines-suspiciousness.csv` files and analyze them. 
 
-Each line corresponds to a snapshot *(l, p, v)*, where where *l* consists of a program location,
-*p* of a boolean predicate, and *v* of a boolean value, and abstracting an execution of the program in which *p* evaluates to *v* at location *l*. The snapshots are ranked according to their suspiciousness score, which is also displayed in each line.
+In `snapshots-suspiciousness-score.csv`, each line corresponds to a snapshot *(l1, l2, p, v)*, where where *l1* consists of a program line, *l2* consists of the corresponding program position, *p* of a boolean predicate, and *v* of a boolean value, and abstracting an execution of the program in which *p* evaluates to *v* at location *l*. The snapshots are ranked according to their suspiciousness score, which is also displayed in each line.
+
+`lines-suspiciousness.csv` is the simplified version of `snapshots-suspiciousness-score.csv`, only containing the line of each snapshot, ordered by decreasing suspiciousness.
