@@ -101,7 +101,10 @@ else
     echo "Program does not verify"
 fi
 
-violation=$(echo "$output" | grep "Error: a precondition\|Error: a postcondition\|Error: this invariant\|Error: assertion")
+violation=$(echo "$output" | grep "Error: a precondition\|Error: a postcondition\|Error: this loop invariant\|Error: assertion")
+if [ ! "$str" ];then
+   violation=$(echo "$output" | grep "Error: ")
+fi
 echo -e "$violation\n"
 violation_location=$(echo "$violation" | grep -o "(.*,.*)")
 violation_line=$(echo $violation_location | grep -o '[0-9]*' | awk 'NR==1')
