@@ -13,6 +13,10 @@ public sealed class ExpressionDependenceAnalyzer : Visitor
         if (AutoFix.FaultyModule == null) return;
         // find violated predicate
         Visit(AutoFix.FaultyModule);
+        if (_violatedPredicate == null && _violationLocation == AutoFix.RelatedLocationLine) {
+            _violationLocation = AutoFix.ViolationLine;
+            Visit(AutoFix.FaultyModule);
+        }
         if (_violatedPredicate == null) return;
         _violatedPredicateSubExprs = GetSubExpressions(_violatedPredicate);
         
