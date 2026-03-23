@@ -15,6 +15,8 @@ public class Enumerator() : IdentifierAvailabilityScanner(true)
     private string _currentTopLevelDecl = "";
     private bool _avoidCurrentlyVisitingExpr;
     private string? _parentExpr;
+    private bool _consultingChildrenExprs;
+    private bool _hasOldExprChild;
     
     /// -------------------------
     /// General AST node visitors
@@ -129,6 +131,11 @@ public class Enumerator() : IdentifierAvailabilityScanner(true)
             _varsToAvoid.Add(boundVar.Name);
         }
         base.VisitExpression(compExpr);
+    }
+    
+    protected override void VisitExpression(OldExpr oldExpr) {
+        _hasOldExprChild = true;
+        base.VisitExpression(oldExpr);
     }
 
     /// -------------------------
@@ -254,8 +261,15 @@ public class Enumerator() : IdentifierAvailabilityScanner(true)
     /// Utils
     /// -------------------------
     private void AddExpression(Expression expr, List<Expression> collection) {
-        if (expr is ApplySuffix { ResolvedExpression: FunctionCallExpr fCallExpr } &&
+        if (_consultingChildrenExprs || 
+            expr is ApplySuffix { ResolvedExpression: FunctionCallExpr fCallExpr } &&
             fCallExpr.Function.IsGhost) return;
+        _hasOldExprChild = false;
+        _consultingChildrenExprs = true;
+        HandleExpression(expr);
+        _consultingChildrenExprs = false;
+        if (_hasOldExprChild) return;
+        
         if (!ExprAlreadyCollected(expr, collection) && !ExprIsRedundant(expr, collection))
             collection.Add(expr);
     }
