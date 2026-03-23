@@ -1,22 +1,73 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <DafnyDir>../../dafny/Binaries</DafnyDir>
   </PropertyGroup>
+
+  <!-- ============================= -->
+  <!-- Dafny + Boogie assemblies     -->
+  <!-- ============================= -->
   <ItemGroup>
-    <ProjectReference Include="../dafny/Source/DafnyLanguageServer/DafnyLanguageServer.csproj" />
-  </ItemGroup>
-  <ItemGroup>
-    <Reference Include="Microsoft.Z3">
-      <HintPath>lib\z3-4.14.1-x64-glibc-2.35\bin\Microsoft.Z3.dll</HintPath>
-      <Private>true</Private>
+    <Reference Include="Dafny">
+      <HintPath>$(DafnyDir)/Dafny.dll</HintPath>
     </Reference>
-    <None Update="lib/z3-4.14.1-x64-glibc-2.35/bin/libz3.so">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <Link>libz3.so</Link>
+    <Reference Include="DafnyCore">
+      <HintPath>$(DafnyDir)/DafnyCore.dll</HintPath>
+    </Reference>
+    <Reference Include="DafnyDriver">
+      <HintPath>$(DafnyDir)/DafnyDriver.dll</HintPath>
+    </Reference>
+    <Reference Include="DafnyLanguageServer">    <!-- Add if needed -->
+      <HintPath>$(DafnyDir)/DafnyLanguageServer.dll</HintPath>
+    </Reference>
+
+ <Reference Include="Boogie.Core">
+      <HintPath>$(DafnyDir)/Boogie.Core.dll</HintPath>
+    </Reference>
+
+    <Reference Include="Boogie.VCGeneration">
+      <HintPath>$(DafnyDir)/Boogie.VCGeneration.dll</HintPath>
+    </Reference>
+
+    <Reference Include="Microsoft.Extensions.Logging.Abstractions">
+      <HintPath>$(DafnyDir)/Microsoft.Extensions.Logging.Abstractions.dll</HintPath>
+    </Reference>
+
+    <Reference Include="Boogie.Provers.SMTLib">
+      <HintPath>$(DafnyDir)/Boogie.Provers.SMTLib.dll</HintPath>
+    </Reference>
+
+    <Reference Include="Boogie.Model">
+      <HintPath>$(DafnyDir)/Boogie.Model.dll</HintPath>
+    </Reference>
+
+    <Reference Include="Boogie.BaseTypes">
+      <HintPath>$(DafnyDir)/Boogie.BaseTypes.dll</HintPath>
+    </Reference>
+    <!-- Other Boogie references... -->
+  </ItemGroup>
+
+  <!-- ============================= -->
+  <!-- Runtime files                 -->
+  <!-- ============================= -->
+  <ItemGroup>
+    <None Include="$(DafnyDir)/DafnyPrelude.bpl">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Include="$(DafnyDir)/DafnyStandardLibraries*.doo">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <!-- ============================= -->
+  <!-- NuGet packages                -->
+  <!-- ============================= -->
+  <ItemGroup>
+    <PackageReference Include="System.CommandLine" Version="2.0.0-beta4.22272.1" />
+    <PackageReference Include="Microsoft.Z3" Version="4.12.2" />
+    <PackageReference Include="System.Collections.Immutable" Version="8.0.0" />
   </ItemGroup>
 
 </Project>

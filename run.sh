@@ -41,7 +41,7 @@ PLUGIN="$SCRIPT_DIR/autofix/bin/Debug/net8.0/AutoFix.dll"
 
 verify_program() {
     echo "Attempting to verify $PROGRAM"
-    dotnet ./dafny/Binaries/Dafny.dll verify "$PROGRAM" --solver-path ./dafny/Binaries/z3
+    dotnet ../dafny/Binaries/Dafny.dll verify "$PROGRAM" 
 }
 
 infer_invariants() {
@@ -65,10 +65,10 @@ infer_invariants() {
     fi
 
     echo "Generating invariants for $passing_str tests"
-    dotnet ./dafny/Binaries/Dafny.dll run "$PROGRAM" \
+    dotnet ../dafny/Binaries/Dafny.dll run "$PROGRAM" \
         --plugin $PLUGIN,"$inv_type_arg $violation_line" \
         --no-verify --allow-warnings \
-        --solver-path ./dafny/Binaries/z3 > "$trace_output_file"
+         > "$trace_output_file"
 
     sed -n '/^decl-version 2\.0/,$p' "$trace_output_file" > "${trace_output_file}.tmp"
     mv "${trace_output_file}.tmp" "$trace_output_file"
@@ -80,10 +80,10 @@ generate_snapshots() {
     local related_location_line="$2"
 
     echo "Generating snapshots"
-    dotnet ./dafny/Binaries/Dafny.dll run "$PROGRAM" \
+    dotnet ../dafny/Binaries/Dafny.dll run "$PROGRAM" \
         --plugin $PLUGIN,"snap $violation_line $related_location_line" \
         --no-verify --allow-warnings \
-        --solver-path ./dafny/Binaries/z3 > snapshots.csv
+         > snapshots.csv
     sed '1,2d' snapshots.csv > snapshots.tmp 
     mv snapshots.tmp snapshots.csv
 }
