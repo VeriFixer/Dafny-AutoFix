@@ -70,7 +70,7 @@ infer_invariants() {
         --no-verify --allow-warnings \
         --solver-path ./dafny/Binaries/z3 > "$trace_output_file"
 
-    sed '1,2d' "$trace_output_file" > "${trace_output_file}.tmp" 
+    sed -n '/^decl-version 2\.0/,$p' "$trace_output_file" > "${trace_output_file}.tmp"
     mv "${trace_output_file}.tmp" "$trace_output_file"
     java -cp $DAIKONDIR/daikon.jar daikon.Daikon "$trace_output_file" --format Simplify > "$inv_output_file"
 }
