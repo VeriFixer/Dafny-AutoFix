@@ -334,10 +334,13 @@ public class SimplifyExpression
             ).Item2;
         }
         
+        var zeroExpr = Expression.CreateIntLiteral(null, 0);
         Expression lengthExpr = type.StartsWith("array<")
             ? new ExprDotName(null, seqSelExpr.Seq, new Name(null, "Length"), null)
             : new UnaryOpExpr(null, UnaryOpExpr.Opcode.Cardinality, seqSelExpr.Seq);
-        var inBoundsExpr = new BinaryExpr(null, BinaryExpr.Opcode.Lt, seqSelExpr.E0, lengthExpr);
+        var inBoundsExpr = new BinaryExpr(null, BinaryExpr.Opcode.And, 
+            new BinaryExpr(null, BinaryExpr.Opcode.Le, zeroExpr, seqSelExpr.E0), 
+            new BinaryExpr(null, BinaryExpr.Opcode.Lt, seqSelExpr.E0, lengthExpr));
         return selectExprs.Count > 1 ? 
             new BinaryExpr(null, BinaryExpr.Opcode.And, inBoundsExpr, AddIndexInBoundsCheck(expr, selectExprs[1..])) :
             new BinaryExpr(null, BinaryExpr.Opcode.And, inBoundsExpr, expr);

@@ -109,6 +109,7 @@ public sealed class EnumerationTraceBuilder : Visitor
             return null;
 
         var token = seqSelExpr.Seq.Origin;
+        var zeroExpr = Expression.CreateIntLiteral(token, 0);
         Expression lengthExpr = seqSelExpr.Seq.Type.ToString().StartsWith("array<")
             ? new ExprDotName(token, seqSelExpr.Seq, new Name(token, "Length"), null) {
                 ResolvedExpression = AstUtils.CreateMemberSelectExpr(
@@ -121,9 +122,13 @@ public sealed class EnumerationTraceBuilder : Visitor
         Expression? firstInBoundsExpr = null;
         Expression? secondInBoundsExpr = null;
         if (seqSelExpr.E0 != null)
-            firstInBoundsExpr = Expression.CreateLess(seqSelExpr.E0, lengthExpr);
+            firstInBoundsExpr = Expression.CreateAnd(
+                Expression.CreateAtMost(zeroExpr, seqSelExpr.E0),
+                Expression.CreateLess(seqSelExpr.E0, lengthExpr));
         if (seqSelExpr.E1 != null)
-            secondInBoundsExpr = Expression.CreateLess(seqSelExpr.E1, lengthExpr);
+            secondInBoundsExpr = Expression.CreateAnd(
+                Expression.CreateLess(zeroExpr, seqSelExpr.E1),
+                Expression.CreateLess(seqSelExpr.E1, lengthExpr));
         Expression? inBoundsExpr = firstInBoundsExpr != null ? secondInBoundsExpr != null ? 
             Expression.CreateAnd(firstInBoundsExpr, secondInBoundsExpr) : 
             firstInBoundsExpr : secondInBoundsExpr;
