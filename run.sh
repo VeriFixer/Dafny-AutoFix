@@ -13,6 +13,24 @@
 #   --strategy <suspiciousness score formula to use, i.e., dynamic-and-static-score or dynamic-score-only>
 #   [help]
 # ------------------------------------------------------------------------------ General utils
+find_repo_root() {
+    local marker="${1:-.repo_verifixer_fault_localization_marker}"
+    local dir
+
+    dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+
+    while [[ "$dir" != "/" ]]; do
+        if [[ -e "$dir/$marker" ]]; then
+            echo "$dir"
+            return 0
+        fi
+        dir="$(dirname "$dir")"
+    done
+
+    echo "Error: Could not find repository root (marker: $marker)" >&2
+    return 1
+}
+REPO_ROOT=$(find_repo_root)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" > /dev/null 2>&1 && pwd)"
 
@@ -49,7 +67,7 @@ fi
 [ "$STRATEGY" != "" ] || die "[ERROR] Missing --strategy argument!"
 [ "$STRATEGY" = "dynamic-and-static-score" ] || [ "$STRATEGY" = "dynamic-score-only" ] || die "[ERROR] Strategy should be dynamic-and-static-score or dynamic-score-only!"
 
-PLUGIN="$SCRIPT_DIR/autofix/bin/Debug/net8.0/AutoFix.dll"
+PLUGIN="$REPO_ROOT/build_output/Autofix/AutoFix.dll"
 
 # ------------------------------------------------------------------------------ Utils
 
