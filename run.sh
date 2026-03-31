@@ -73,7 +73,7 @@ PLUGIN="$REPO_ROOT/build_output/Autofix/AutoFix.dll"
 
 verify_program() {
     echo "Attempting to verify $PROGRAM"
-    dotnet ../dafny/Binaries/Dafny.dll verify "$PROGRAM" 
+    dafny verify "$PROGRAM" 
 }
 
 infer_invariants() {
@@ -97,7 +97,7 @@ infer_invariants() {
     fi
 
     echo "Generating invariants for $passing_str tests"
-    dotnet ../dafny/Binaries/Dafny.dll run "$PROGRAM" \
+    dafny run "$PROGRAM" \
         --plugin $PLUGIN,"$inv_type_arg $violation_line" \
         --no-verify --allow-warnings \
          > "$trace_output_file"
@@ -112,7 +112,7 @@ generate_snapshots() {
     local related_location_line="$2"
 
     echo "Generating snapshots"
-    dotnet ../dafny/Binaries/Dafny.dll run "$PROGRAM" \
+    dafny run "$PROGRAM" \
         --plugin $PLUGIN,"snap $violation_line $related_location_line" \
         --no-verify --allow-warnings \
          > snapshots.csv
@@ -150,7 +150,7 @@ related_location_line=$(echo $related_location | grep -o '[0-9]*' | awk 'NR==1')
 echo "$(infer_invariants true $violation_line)"
 echo -e "$(infer_invariants false $violation_line)\n"
 # Filter invariants: we are interested in failing invariants that are not passing
-python3 filter-invs.py
+python3 "$SCRIPT_DIR/filter-invs.py"
 
 # Generate snapshots via enumeration and invariants
 echo -e "$(generate_snapshots $violation_line $related_location_line)\n"
@@ -158,7 +158,7 @@ echo -e "$(generate_snapshots $violation_line $related_location_line)\n"
 # Compute the suspiciousness score of each snapshot
 echo "Computing suspiciousness scores"
 if [ "$STRATEGY" = "dynamic-and-static-score" ]; then
-    python3 compute-suspiciousness.py
+    python3 "$SCRIPT_DIR/compute-suspiciousness.py"
 else
-    python3 compute-suspiciousness.py short-score
+    python3 "$SCRIPT_DIR/compute-suspiciousness.py short-score"
 fi
