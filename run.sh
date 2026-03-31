@@ -44,13 +44,15 @@ die() {
 USAGE="Usage: ${BASH_SOURCE[0]}
    <full path to the program under test, e.g., $SCRIPT_DIR/../datasets/630-dafny_tmp_tmpz2kokaiq_Solution.dfy>
    --strategy <suspiciousness score formula to use, e.g., dynamic-and-static-score or dynamic-score-only>
+   --out-dir <output_directory, e.g, /app/run_artifacts/autofix_fl_run>
    [help]"
-if [ "$#" -ne "1" ] && [ "$#" -ne "3" ]; then
+if [ "$#" -ne "1" ] && [ "$#" -ne "3" ] && [ "$#" -ne "5" ]; then
   die "$USAGE"
 fi
 
 PROGRAM=""
 STRATEGY=""
+OUT_DIR="$(pwd)"
 
 if [ "$#" -eq "1" ] && [ "$1" = "--help" ]; then
     echo "$USAGE"
@@ -58,6 +60,17 @@ if [ "$#" -eq "1" ] && [ "$1" = "--help" ]; then
 elif [ "$#" -eq "3" ] && [ "$2" = "--strategy" ]; then
     PROGRAM=$1
     STRATEGY=$3
+elif [ "$#" -eq "5" ]; then
+    PROGRAM=$1
+    if [ "$2" = "--strategy" ] && [ "$4" = "--out-dir" ]; then
+        STRATEGY=$3
+        OUT_DIR=$5
+    elif [ "$4" = "--strategy" ] && [ "$2" = "--out-dir" ]; then
+        STRATEGY=$5
+        OUT_DIR=$3
+    else
+        die "$USAGE"
+    fi
 else
     die "$USAGE"
 fi
@@ -122,8 +135,10 @@ generate_snapshots() {
 
 # ------------------------------------------------------------------------------ Main
 
-# Get Dafny verification output
+pushd . > /dev/null 2>&1
+cd "$OUT_DIR"
 
+# Get Dafny verification output
 output="$(verify_program)"
 verified=$(echo $output | grep "Dafny program verifier finished.*0 errors")
 if [[ $verified ]]; then
@@ -162,3 +177,5 @@ if [ "$STRATEGY" = "dynamic-and-static-score" ]; then
 else
     python3 "$SCRIPT_DIR/compute-suspiciousness.py short-score"
 fi
+
+popd > /dev/null 2>&1
