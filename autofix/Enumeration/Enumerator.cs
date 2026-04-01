@@ -111,7 +111,8 @@ public class Enumerator() : IdentifierAvailabilityScanner(true)
     }
     
     protected override void VisitExpression(SeqSelectExpr seqSExpr) {
-        if (seqSExpr.Seq.Type is SeqType || seqSExpr.Seq.Type.ToString().StartsWith("array") && 
+        if ((seqSExpr.Seq.Type is SeqType || seqSExpr.Seq.Type.ToString().StartsWith("array") || 
+             seqSExpr.Seq.Type.ToString() == "string") && 
             SeqSelectExprs.All(e => e.ToString() != seqSExpr.ToString()))
             SeqSelectExprs.Add(seqSExpr);
         if (seqSExpr.Seq.Type is MapType && MapSelectExprs.All(e => e.ToString() != seqSExpr.ToString()))
