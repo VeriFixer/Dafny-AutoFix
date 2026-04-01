@@ -134,14 +134,16 @@ public sealed class ControlDependenceAnalyzer : Visitor
         var blockDivider = violationLocationIdx + 1;
         if (_visitingOutsideViolationBlockStmt && blockBody[violationLocationIdx].SubStatements.Contains(_outerBlockWithViolationStmt)) {
             blockDivider = violationLocationIdx;
-            _prevStmt = DeterminePrevStmt(_outerBlockWithViolationStmt?.Body[0], true);
+            if (_outerBlockWithViolationStmt?.Body.Count > 0)
+                _prevStmt = DeterminePrevStmt(_outerBlockWithViolationStmt?.Body[0], true);
         }
         ComputeCDists(blockBody[..blockDivider], true);
         
         blockDivider = violationLocationIdx;
         if (_visitingOutsideViolationBlockStmt && blockBody[violationLocationIdx].SubStatements.Contains(_outerBlockWithViolationStmt)) {
             blockDivider = violationLocationIdx + 1;
-            _prevStmt = DeterminePrevStmt(_outerBlockWithViolationStmt?.Body[^1], false);
+            if (_outerBlockWithViolationStmt?.Body.Count > 0)
+                _prevStmt = DeterminePrevStmt(_outerBlockWithViolationStmt?.Body[^1], false);
         }
         ComputeCDists(blockBody[blockDivider..], false);
     }
@@ -158,7 +160,8 @@ public sealed class ControlDependenceAnalyzer : Visitor
                 i > 0 ? DeterminePrevStmt(blockStmt.Body[i - 1], _beforeViolationStmt) : stmt;
             HandleStatement(stmt);
         }
-        if (!_cDists.ContainsKey(blockStmt) && _cDists.TryGetValue(blockStmt.Body[0], out var value))
+        if (!_cDists.ContainsKey(blockStmt) && blockStmt.Body.Count > 0 && 
+            _cDists.TryGetValue(blockStmt.Body[0], out var value))
             _cDists.Add(blockStmt, value);
     }
 
@@ -199,6 +202,7 @@ public sealed class ControlDependenceAnalyzer : Visitor
         Statement? newPrevStmt = null;
         var stmtsByIncreasingBlockSize = stmts.OrderBy(l => l.Count).ToList();
         foreach (var stmt in stmtsByIncreasingBlockSize) {
+            if (stmt.Count == 0) continue;
             newPrevStmt = DeterminePrevStmt(stmt[before ? 0 : stmt.Count - 1], before);
             if (newPrevStmt != null) break;
         }
@@ -218,13 +222,21 @@ public sealed class ControlDependenceAnalyzer : Visitor
                 return maxDist != 0.0 ? 1 - cDist / maxDist : 1.0;
             switch (stmt) {
                 case BlockStmt bStmt when bStmt.StartToken.pos == snapshotLocation:
-                    return maxDist != 0.0 ? 1 - (_cDists.TryGetValue(bStmt.Body[0], out var value) ? value : cDist) / maxDist : 1.0;
+                    return maxDist != 0.0 ? 1 - 
+                        (bStmt.Body.Count > 0 && _cDists.TryGetValue(bStmt.Body[0], out var value) ? value : cDist) 
+                        / maxDist : 1.0;
                 case IfStmt ifStmt when ifStmt.Thn.StartToken.pos == snapshotLocation:
-                    return maxDist != 0.0 ? 1 - (_cDists.TryGetValue(ifStmt.Thn.Body[0], out value) ? value : cDist) / maxDist : 1.0;
+                    return maxDist != 0.0 ? 1 - 
+                        (ifStmt.Thn.Body.Count > 0 && _cDists.TryGetValue(ifStmt.Thn.Body[0], out value) ? value : cDist) 
+                        / maxDist : 1.0;
                 case IfStmt { Els: BlockStmt els } ifStmt when (ifStmt.Els?.StartToken.pos == snapshotLocation):
-                    return maxDist != 0.0 ? 1 - (_cDists.TryGetValue(els.Body[0], out value) ? value : cDist) / maxDist : 1.0;
+                    return maxDist != 0.0 ? 1 - 
+                        (els.Body.Count > 0 && _cDists.TryGetValue(els.Body[0], out value) ? value : cDist) 
+                        / maxDist : 1.0;
                 case OneBodyLoopStmt loopStmt when loopStmt.Body.StartToken.pos == snapshotLocation:
-                    return maxDist != 0.0 ? 1 - (_cDists.TryGetValue(loopStmt.Body.Body[0], out value) ? value : cDist) / maxDist : 1.0;
+                    return maxDist != 0.0 ? 1 - 
+                        (loopStmt.Body.Body.Count > 0 && _cDists.TryGetValue(loopStmt.Body.Body[0], out value) ? value : cDist) 
+                        / maxDist : 1.0;
             }
             if (_faultyMethodClone.Body.StartToken.pos == snapshotLocation && stmt == _faultyMethodClone.Body.Body[0])
                 return maxDist != 0.0 ? 1 - (cDist + 1) / maxDist : 1.0;
