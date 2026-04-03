@@ -1,5 +1,9 @@
 ﻿using Microsoft.Dafny;
 using Microsoft.Z3;
+using Function = Microsoft.Dafny.Function;
+using LiteralExpr = Microsoft.Dafny.LiteralExpr;
+using MapType = Microsoft.Dafny.MapType;
+using OldExpr = Microsoft.Dafny.OldExpr;
 using Type = Microsoft.Dafny.Type;
 
 namespace AutoFix.Enumeration;
@@ -12,11 +16,13 @@ public class Enumerator() : IdentifierAvailabilityScanner(true)
     private readonly List<(string, Type, string)> _allArgumentlessPreds = []; // (scope, return type, predicate name)
     private readonly List<string> _varsToAvoid = [];
     private ModuleDefinition? _currentModule;
+    private BlockStmt? _currentBlock;
     private string _currentTopLevelDecl = "";
     private bool _avoidCurrentlyVisitingExpr;
     private string? _parentExpr;
     private bool _consultingChildrenExprs;
     private bool _hasOldExprChild;
+    private int _outerLoopCount;
     
     /// -------------------------
     /// General AST node visitors
@@ -67,7 +73,14 @@ public class Enumerator() : IdentifierAvailabilityScanner(true)
                 _allArgumentlessPreds.Add((_currentTopLevelDecl, function.ResultType, function.Name));
         }
     }
-    
+
+    protected override void HandleBlock(BlockStmt blockStmt) {
+        var previousCurrentBlock = _currentBlock;
+        _currentBlock = blockStmt;
+        base.HandleBlock(blockStmt);
+        _currentBlock = previousCurrentBlock;
+    }
+
     /// -------------------------
     /// Faulty method visit
     /// -------------------------
@@ -109,7 +122,15 @@ public class Enumerator() : IdentifierAvailabilityScanner(true)
         if (bExpr.Op == BinaryExpr.Opcode.Imp && !_avoidCurrentlyVisitingExpr)
             CollectImpliesMutations(bExpr);
     }
-    
+
+    protected override void VisitStatement(LoopStmt loopStmt) {
+        if (loopStmt is OneBodyLoopStmt oneBodyLoopStmt && _currentBlock != null)
+            AstUtils.LimitLoopIterations(oneBodyLoopStmt, _currentBlock, _outerLoopCount);
+        _outerLoopCount++;
+        base.VisitStatement(loopStmt);
+        _outerLoopCount--;
+    }
+
     protected override void VisitExpression(SeqSelectExpr seqSExpr) {
         if ((seqSExpr.Seq.Type is SeqType || seqSExpr.Seq.Type.ToString().StartsWith("array") || 
              seqSExpr.Seq.Type.ToString() == "string") && 

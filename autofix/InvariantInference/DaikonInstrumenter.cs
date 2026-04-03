@@ -6,10 +6,13 @@ namespace AutoFix.InvariantInference;
 public class DaikonInstrumenter(List<Identifier> identifierAvailability) : Visitor(true)
 {
     private TopLevelDeclWithMembers? _currentTopLevelDecl;
+    private BlockStmt? _currentBlock;
     private readonly List<Method> _newMethods = [];
     private List<Statement> _newBlockBody = [];
     private readonly List<Statement> _newStmts = [];
     private ReturnStmt? _lastStmtReturn;
+    private int _outerLoopCount;
+    private bool _invariantInstrumentationComplete;
     
     public void Instrument(ModuleDefinition module) {
         Visit(module);
@@ -30,6 +33,9 @@ public class DaikonInstrumenter(List<Identifier> identifierAvailability) : Visit
         }
         AddMethodTracePoints(faultyMethod);
         AddDummyMethodsTracePoints();
+        _invariantInstrumentationComplete = true;
+        // put max iterations in loops to avoid infinite execution
+        HandleMethod(faultyMethod);
     }
     
     protected override void HandleMemberDecls(TopLevelDeclWithMembers decl) {
@@ -57,15 +63,37 @@ public class DaikonInstrumenter(List<Identifier> identifierAvailability) : Visit
             HandleBlock(method.Body);
     }
     
+    protected override void VisitStatement(LoopStmt loopStmt) {
+        if (_invariantInstrumentationComplete && _currentBlock != null &&
+            !DaikonFormatConverter.NewLoops.Contains(loopStmt) && 
+            loopStmt is OneBodyLoopStmt oneBodyLoopStmt)
+            AstUtils.LimitLoopIterations(oneBodyLoopStmt, _currentBlock, _outerLoopCount);
+        _outerLoopCount++;
+        base.VisitStatement(loopStmt);
+        _outerLoopCount--;
+    }
+    
     /// -------------------------
     /// Instrumentation
     /// -------------------------
     protected override void HandleBlock(BlockStmt blockStmt) {
-        var faultyMethod = AutoFix.FaultyMethod;
+        var previousCurrentBlock = _currentBlock;
+        _currentBlock = blockStmt;
+
+        if (_invariantInstrumentationComplete) {
+            base.HandleBlock(blockStmt);
+        } else {
+            InstrumentBlock(blockStmt);
+        }
         
+        _currentBlock = previousCurrentBlock;
+    }
+
+    private void InstrumentBlock(BlockStmt blockStmt) {
+        var faultyMethod = AutoFix.FaultyMethod;
         var prevNewBlock = _newBlockBody;
         _newBlockBody = [];
-        
+
         if (blockStmt != faultyMethod?.Body)
             InstrumentLine(blockStmt.StartToken);
         foreach (var (stmt, i) in blockStmt.Body.Select((stmt, i) => (stmt, i))) {
