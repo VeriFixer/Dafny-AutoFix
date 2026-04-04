@@ -236,7 +236,7 @@ public class DaikonInstrumenter(List<Identifier> identifierAvailability) : Visit
 
     private void AddVariableDeclaration(string name, Type t, IOrigin token) {
         var decType = t.ToString().Replace(" ", "");
-        var repType = DaikonFormatConverter.ToType(t);
+        var repType = DaikonFormatConverter.ToType(t); 
         var comparability = DaikonFormatConverter.GetComparability(t);
         if (repType == "" || comparability == "") return;
 
@@ -340,6 +340,9 @@ public class DaikonInstrumenter(List<Identifier> identifierAvailability) : Visit
     }
 
     private List<Statement> AddVariableTracePoint(Method method, Identifier id) {
+        var repType = DaikonFormatConverter.ToType(id.Type); 
+        var comparability = DaikonFormatConverter.GetComparability(id.Type);
+        if (repType == "" || comparability == "") return [];
         var daikonValue = DaikonFormatConverter.ToDaikonValue(method.Origin, id);
         if (daikonValue == null)
             return [];
