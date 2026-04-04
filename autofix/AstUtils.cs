@@ -1,5 +1,6 @@
-using System.Diagnostics;
 using Microsoft.Dafny;
+using IdentifierExpr = Microsoft.Dafny.IdentifierExpr;
+using MapType = Microsoft.Dafny.MapType;
 using Type = Microsoft.Dafny.Type;
 
 namespace AutoFix;
@@ -200,6 +201,35 @@ public static class AstUtils
                 bStmt.Body.Insert(idx, printStmt);
             }
         }
+    }
+
+    public static void LimitLoopIterations(OneBodyLoopStmt loopStmt, BlockStmt enclosingBlock, int outerLoopCount) {
+        var stmtPositionInCurrentBlock = enclosingBlock.Body.IndexOf(loopStmt);
+        if (stmtPositionInCurrentBlock == -1) return;
+        
+        var token = enclosingBlock.Body[stmtPositionInCurrentBlock].StartToken;
+        var iterationCounterVar = Statement.CreateLocalVariable(token, 
+            $"iter_counter{outerLoopCount}'", 
+            Expression.CreateIntLiteral(token, 0));
+        enclosingBlock.Body.Insert(stmtPositionInCurrentBlock, iterationCounterVar);
+        var iterationCounter = new NameSegment(token, $"iter_counter{outerLoopCount}'", null);
+        ResolveNameSegment(iterationCounter, Identifier.ToIdentifier(iterationCounterVar.Locals[0]));
+
+        token = loopStmt.StartToken;
+        var maxIterationsReached = CreateAtLeast(iterationCounter, Expression.CreateIntLiteral(token, 50));
+        var breakStmt = new BreakOrContinueStmt(token, outerLoopCount + 1, false);
+        breakStmt.TargetStmt = loopStmt;
+        var ifMaxIterBreakStmt = new IfStmt(
+            token, false, maxIterationsReached, 
+            new BlockStmt(token, [breakStmt]), null);
+        
+        var incrementIterationCounterExpr = new ExprRhs(
+            Expression.CreateAdd(iterationCounter, Expression.CreateIntLiteral(token, 1)));
+        var incrementIterationCounter = new AssignStatement(token, [iterationCounter], [incrementIterationCounterExpr], false);
+        ResolveNormalAssignStatement(incrementIterationCounter);
+        
+        loopStmt.Labels.Add(new Label(new SourceOrigin(loopStmt.StartToken, loopStmt.EndToken), null));
+        loopStmt.Body?.Body.InsertRange(0, [ifMaxIterBreakStmt, incrementIterationCounter]);
     }
 }
 

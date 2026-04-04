@@ -8,6 +8,7 @@ public static class DaikonFormatConverter
 {
     private static int _outerLoopCount;
     private static bool _shouldEscapeQuotes;
+    public static List<Statement> NewLoops = [];
     
     /// -------------------------
     /// Values
@@ -133,6 +134,7 @@ public static class DaikonFormatConverter
             new Specification<FrameExpression>(),
             new BlockStmt(token, listIndexPrinter != null ? [listIndexPrinter] : []), 
             [], null);
+        NewLoops.Add(loop);
         
         var openArrayElem = AstUtils.CreateStringLiteral(token, "[ ");
         var printOpenArray = new PrintStmt(token, [openArrayElem]);
@@ -186,6 +188,7 @@ public static class DaikonFormatConverter
                 true, [], new Specification<Expression>(),
                 new Specification<FrameExpression>(),
                 new BlockStmt(token, loopBody), [], null);
+            NewLoops.Add(loop);
 
             if (i == 0 && !_shouldEscapeQuotes) {
                 closeArrayElem = AstUtils.CreateStringLiteral(token, $"]");
@@ -247,11 +250,12 @@ public static class DaikonFormatConverter
         List<Statement> loopBody = setElemPrinter != null ? 
             [setElemSelector, setElemPrinter, setElemRemover] : 
             [setElemSelector, setElemRemover];
-        var loop = new WhileStmt(token, loopGuard, [], 
+        var loop = new WhileStmt(token, loopGuard, [],
             new Specification<Expression>(),
             new Specification<FrameExpression>(), 
             new BlockStmt(token, loopBody)
         );
+        NewLoops.Add(loop);
 
         var numDimensions = NumDimensions((expr ?? varValue).Type);
         var openArrayElem = AstUtils.CreateStringLiteral(token, "[ ");
