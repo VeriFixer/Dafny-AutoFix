@@ -175,7 +175,7 @@ echo "Computing suspiciousness scores"
 if [ "$STRATEGY" = "dynamic-and-static-score" ]; then
     python3 "$SCRIPT_DIR/compute-suspiciousness.py"
 else
-    python3 "$SCRIPT_DIR/compute-suspiciousness.py short-score"
+    python3 "$SCRIPT_DIR/compute-suspiciousness.py" short-score
 fi
 
 popd > /dev/null 2>&1
