@@ -20,6 +20,7 @@ public class Enumerator() : IdentifierAvailabilityScanner(true)
     private string _currentTopLevelDecl = "";
     private bool _avoidCurrentlyVisitingExpr;
     private string? _parentExpr;
+    private bool _isSecondVisit;
     private bool _consultingChildrenExprs;
     private bool _hasOldExprChild;
     private int _outerLoopCount;
@@ -85,6 +86,7 @@ public class Enumerator() : IdentifierAvailabilityScanner(true)
     /// Faulty method visit
     /// -------------------------
     public void VisitFaultyMethod() {
+        _isSecondVisit = true;
         var faultyMethod = AutoFix.FaultyMethod;
         if (faultyMethod == null)
             return;
@@ -124,7 +126,7 @@ public class Enumerator() : IdentifierAvailabilityScanner(true)
     }
 
     protected override void VisitStatement(LoopStmt loopStmt) {
-        if (loopStmt is OneBodyLoopStmt oneBodyLoopStmt && _currentBlock != null)
+        if (loopStmt is OneBodyLoopStmt oneBodyLoopStmt && !_isSecondVisit && _currentBlock != null)
             AstUtils.LimitLoopIterations(oneBodyLoopStmt, _currentBlock, _outerLoopCount);
         _outerLoopCount++;
         base.VisitStatement(loopStmt);

@@ -27,11 +27,9 @@ public abstract class Visitor
             {typeof(VarDeclPattern), stmt => VisitStatement((stmt as VarDeclPattern)!)},
             {typeof(ProduceStmt), stmt => VisitStatement((stmt as ProduceStmt)!)},
             {typeof(IfStmt), stmt => VisitStatement((stmt as IfStmt)!)},
-            {typeof(WhileStmt), stmt => VisitStatement((stmt as WhileStmt)!)},
-            {typeof(ForLoopStmt), stmt => VisitStatement((stmt as ForLoopStmt)!)},
+            {typeof(LoopStmt), stmt => VisitStatement((stmt as LoopStmt)!)},
             {typeof(ForallStmt), stmt => VisitStatement((stmt as ForallStmt)!)},
             {typeof(BreakOrContinueStmt), stmt => VisitStatement((stmt as BreakOrContinueStmt)!)},
-            {typeof(AlternativeLoopStmt), stmt => VisitStatement((stmt as AlternativeLoopStmt)!)},
             {typeof(AlternativeStmt), stmt => VisitStatement((stmt as AlternativeStmt)!)},
             {typeof(MatchStmt), stmt => VisitStatement((stmt as MatchStmt)!)},
             {typeof(NestedMatchStmt), stmt => VisitStatement((stmt as NestedMatchStmt)!)},
@@ -246,6 +244,12 @@ public abstract class Visitor
         VisitReqEns(loopStmt.Invariants);
         VisitDecreases(loopStmt.Decreases);
         VisitReadsModifies(loopStmt.Mod);
+        
+        switch (loopStmt) {
+            case WhileStmt whileStmt: VisitStatement(whileStmt); break;
+            case ForLoopStmt forStmt: VisitStatement(forStmt); break;
+            case AlternativeLoopStmt altLStmt: VisitStatement(altLStmt); break;
+        }
     }
     
     protected virtual void VisitStatement(WhileStmt whileStmt) {
@@ -253,7 +257,6 @@ public abstract class Visitor
             HandleExpression(whileStmt.Guard);
         if (whileStmt.Body != null) 
             HandleBlock(whileStmt.Body);
-        VisitStatement(whileStmt as LoopStmt);
     }
 
     protected virtual void VisitStatement(ForLoopStmt forStmt) {
@@ -262,7 +265,6 @@ public abstract class Visitor
             HandleExpression(forStmt.End);
         if (forStmt.Body != null)
             HandleBlock(forStmt.Body);
-        VisitStatement(forStmt as LoopStmt);
     }
 
     protected virtual void VisitStatement(ForallStmt forStmt) {
@@ -275,7 +277,6 @@ public abstract class Visitor
 
     protected virtual void VisitStatement(AlternativeLoopStmt altLStmt) {
         HandleGuardedAlternatives(altLStmt.Alternatives);
-        VisitStatement(altLStmt as LoopStmt);
     }
 
     protected virtual void VisitStatement(AlternativeStmt altStmt) {

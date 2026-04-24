@@ -79,6 +79,7 @@ public class SnapshotGenerator(ErrorReporter reporter) : Rewriter(reporter)
     public override void PreResolve(ModuleDefinition module) {
         _invariantParser.Parse(module);
         AllPredicates.AddRange(_invariantParser.AllInvariants);
+        AstUtils.IterCounterVars = [];
     }
     
     /// -------------------------
