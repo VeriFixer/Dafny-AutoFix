@@ -7,6 +7,7 @@ namespace AutoFix;
 
 public static class AstUtils
 {
+    public static Dictionary<string, IVariable> IterCounterVars = [];
     /// -----------------------------------------------------
     /// My version of the (missing) static methods of Dafny's
     /// Expression class for creating resolved expressions
@@ -208,12 +209,11 @@ public static class AstUtils
         if (stmtPositionInCurrentBlock == -1) return;
         
         var token = enclosingBlock.Body[stmtPositionInCurrentBlock].StartToken;
-        var iterationCounterVar = Statement.CreateLocalVariable(token, 
-            $"iter_counter{outerLoopCount}'", 
-            Expression.CreateIntLiteral(token, 0));
-        enclosingBlock.Body.Insert(stmtPositionInCurrentBlock, iterationCounterVar);
-        var iterationCounter = new NameSegment(token, $"iter_counter{outerLoopCount}'", null);
-        ResolveNameSegment(iterationCounter, Identifier.ToIdentifier(iterationCounterVar.Locals[0]));
+        var varName = $"iter_counter{outerLoopCount}'";
+        var iterationCounterInit = InitializeIterCounter(token, varName, outerLoopCount);
+        enclosingBlock.Body.Insert(stmtPositionInCurrentBlock, iterationCounterInit);
+        var iterationCounter = new NameSegment(token, varName, null);
+        ResolveNameSegment(iterationCounter, Identifier.ToIdentifier(IterCounterVars[varName]));
 
         token = loopStmt.StartToken;
         var maxIterationsReached = CreateAtLeast(iterationCounter, Expression.CreateIntLiteral(token, 50));
@@ -230,6 +230,23 @@ public static class AstUtils
         
         loopStmt.Labels.Add(new Label(new SourceOrigin(loopStmt.StartToken, loopStmt.EndToken), null));
         loopStmt.Body?.Body.InsertRange(0, [ifMaxIterBreakStmt, incrementIterationCounter]);
+    }
+
+    private static Statement InitializeIterCounter(Token token, string varName, int outerLoopCount) {
+        if (!IterCounterVars.ContainsKey(varName)) {
+            var iterationCounterVar = Statement.CreateLocalVariable(token, 
+                $"iter_counter{outerLoopCount}'", 
+                Expression.CreateIntLiteral(token, 0));
+            IterCounterVars.Add(varName, iterationCounterVar.Locals[0]);
+            return iterationCounterVar;
+        }
+        
+        var iterationCounter = new NameSegment(token, $"iter_counter{outerLoopCount}'", null);
+        ResolveNameSegment(iterationCounter, Identifier.ToIdentifier(IterCounterVars[varName]));
+        var incrementIterationCounterExpr = new ExprRhs(Expression.CreateIntLiteral(token, 0));
+        var incrementIterationCounter = new AssignStatement(token, [iterationCounter], [incrementIterationCounterExpr], false);
+        ResolveNormalAssignStatement(incrementIterationCounter);
+        return incrementIterationCounter;
     }
 }
 
