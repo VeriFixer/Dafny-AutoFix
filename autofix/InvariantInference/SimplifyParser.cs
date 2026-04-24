@@ -97,8 +97,10 @@ public class SimplifyExpression
                 .SelectMany(exprList => exprList)
                 .Select(GetExpressionType)
                 .FirstOrDefault(type => type != null);
-            if (_sibblingNodeType == null || !_sibblingNodeType.ToString().Contains("?"))
+            if (_sibblingNodeType == null || !_sibblingNodeType.ToString().Contains("?")) {
+                _isTopLevelExpr = prevIsTopLevelExpr;
                 return [null];
+            }
         }
         
         var argExprs = _args.Select(arg => arg.ToExpression()).SelectMany(exprList => exprList).ToList();
