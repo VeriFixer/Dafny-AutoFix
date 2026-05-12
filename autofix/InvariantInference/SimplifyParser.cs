@@ -161,9 +161,10 @@ public class SimplifyExpression
         return idExprs;
     }
 
-    private Expression ToBinaryExpression(BinaryExpr.Opcode op, List<Expression?> argExprs) {
+    private Expression? ToBinaryExpression(BinaryExpr.Opcode op, List<Expression?> argExprs) {
         if (argExprs.Count == 1 && argExprs[0] != null)
             return argExprs[0];
+        if (op == BinaryExpr.Opcode.Mod && GetExpressionType(argExprs[1]) != Type.Int) return null;
         
         Type? type = null;
         Type? argType = null;
@@ -383,6 +384,12 @@ public class SimplifyExpression
             exprType => 
                 exprType.Item1 == expr &&
                 exprType.Item2 != null
+        ).Item2;
+    }
+    
+    private string GetStringTypeFromVarName(string varName) {
+        return DaikonInvariantParser.TypeInfo.FirstOrDefault(
+            var => var.Item1 == varName
         ).Item2;
     }
 
