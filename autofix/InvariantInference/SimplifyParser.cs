@@ -19,7 +19,7 @@ public class SimplifyExpression
     private static List<Expression> _exprsNeedingIndexInBoundsCheck = [];
     private static bool _isTopLevelExpr = true;
     private static bool _isTopLevelForallExpr;
-    private static bool _replaceArraySelectionWithMembership;
+    private static Expression? _replaceArraySelectionWithMembership;
     private static Type? _sibblingNodeType;
     private static List<(Expression?, Type?)> _forallBoundVars = [];
 
@@ -140,6 +140,8 @@ public class SimplifyExpression
             _ => [null]
         };
         
+        if (_isTopLevelExpr)
+            _replaceArraySelectionWithMembership = null;
         if (_isTopLevelExpr && _exprsNeedingNonZeroCheck.Count > 0 && expr[0] != null) {
             expr = [AddNonZeroCheck(expr[0], _exprsNeedingNonZeroCheck)];
             _exprsNeedingNonZeroCheck = [];
@@ -192,8 +194,8 @@ public class SimplifyExpression
         if (op == BinaryExpr.Opcode.Mod && argExprs[1] != null)
             _exprsNeedingNonZeroCheck.Add(argExprs[1]);
         
-        if (op == BinaryExpr.Opcode.Eq && _replaceArraySelectionWithMembership)
-            return ToArrayMembershipExpression(argExprs[0], argExprs[1]);
+        if (op == BinaryExpr.Opcode.Eq && _replaceArraySelectionWithMembership != null)
+            return ToArrayMembershipExpression(_replaceArraySelectionWithMembership, argExprs[1]);
         if (op == BinaryExpr.Opcode.Add || op == BinaryExpr.Opcode.Sub ||
             op == BinaryExpr.Opcode.Mul || op == BinaryExpr.Opcode.Div ||
             op == BinaryExpr.Opcode.And || op == BinaryExpr.Opcode.Or)
@@ -273,7 +275,7 @@ public class SimplifyExpression
     }
 
     private Expression ToArrayMembershipExpression(Expression? array, Expression? elem) {
-        _replaceArraySelectionWithMembership = false;
+        _replaceArraySelectionWithMembership = null;
         var inExpr = new BinaryExpr(null, BinaryExpr.Opcode.In, elem, array);
         AllGeneratedExprsTypes.Add((inExpr, Type.Bool));
         return inExpr;
@@ -316,8 +318,8 @@ public class SimplifyExpression
         };
         
         if (!type.StartsWith("array<") && !type.StartsWith("seq<")) {
-            _replaceArraySelectionWithMembership = true;
-            return array;
+            _replaceArraySelectionWithMembership = array;
+            return null;
         }
         var selectExpr = new SeqSelectExpr(null, true, array, index, null);
         if (!_isTopLevelForallExpr)
