@@ -119,6 +119,13 @@ public class DaikonInstrumenter(List<Identifier> identifierAvailability) : Visit
                 (token.pos > id.AvailabilityStartPos && token.pos < id.AvailabilityEndPos) || 
                 (id.AvailabilityStartPos == null && id.AvailabilityEndPos == null)
         ).DistinctBy(id => id.Name).ToList();
+        foreach (var identifier in availableIdentifiers.ToList()) {
+            var repType = DaikonFormatConverter.ToType(identifier.Type); 
+            var comparability = DaikonFormatConverter.GetComparability(identifier.Type);
+            if (repType == "" || comparability == "")
+                availableIdentifiers.Remove(identifier);
+        }
+        
         var newMethod = GenerateDummyMethod(token.pos, availableIdentifiers);
         if (newMethod == null) return;
 
