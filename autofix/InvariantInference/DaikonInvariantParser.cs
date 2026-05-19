@@ -143,7 +143,7 @@ public class DaikonInvariantParser : Visitor
                 return constantToken != null ? [constantToken] : [];
             } if (word.StartsWith("_string_")) {
                 return [new StringSimplifyToken(word[8..])];
-            } if (word.StartsWith("__orig__")) {
+            } if (word.StartsWith("__orig__") || word.Contains("long-int")) {
                 _invalidInvariant = true;
                 return [];
             }
