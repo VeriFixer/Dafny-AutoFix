@@ -43,8 +43,8 @@ public sealed class EnumerationTraceBuilder : Visitor
         _newBlockBody = [];
         InstrumentLine(blockStmt.StartToken, blockStmt);
         foreach (var stmt in blockStmt.Body) {
-            _newBlockBody.Add(stmt);
             if (stmt is PrintStmt) continue;
+            _newBlockBody.Add(stmt);
             HandleStatement(stmt);
             InstrumentLine(stmt.EndToken, stmt);
         }

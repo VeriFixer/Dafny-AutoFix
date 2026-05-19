@@ -97,6 +97,7 @@ public class DaikonInstrumenter(List<Identifier> identifierAvailability) : Visit
         if (blockStmt != faultyMethod?.Body)
             InstrumentLine(blockStmt.StartToken);
         foreach (var (stmt, i) in blockStmt.Body.Select((stmt, i) => (stmt, i))) {
+            if (stmt is PrintStmt) continue;
             _newBlockBody.Add(stmt);
             HandleStatement(stmt);
             if (stmt is ReturnStmt || 
