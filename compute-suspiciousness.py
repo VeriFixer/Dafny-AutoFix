@@ -5,6 +5,8 @@ def read_snapshots():
     inv_snapshots = set()
     pass_snapshots = {}
     fail_snapshots = {}
+    has_passing_tests = False
+    has_failing_tests = False
 
     with open("snapshots.csv", 'r') as file:
         passing = None
@@ -16,6 +18,10 @@ def read_snapshots():
                 passing = False
             elif line.strip() == "Running test case":
                 current_test_case_snapshots = set()
+                if passing:
+                    has_passing_tests = True
+                elif passing != None:
+                    has_failing_tests = True
             elif passing != None:
                 full_snapshot = tuple(line.strip().split(';'))
                 snapshot = full_snapshot[:6]
@@ -30,7 +36,7 @@ def read_snapshots():
                 else:
                     collection[snapshot] = 1
 
-    return (enum_snapshots, inv_snapshots, pass_snapshots, fail_snapshots)   
+    return (enum_snapshots, inv_snapshots, pass_snapshots, fail_snapshots, has_passing_tests, has_failing_tests)   
 
 
 def compute_scores(use_complete_score, pass_snapshots, fail_snapshots):
@@ -57,7 +63,7 @@ def main():
     if len(sys.argv) > 1 and sys.argv[1] == "short-score":
         use_complete_score = False
 
-    (enum_snapshots, inv_snapshots, pass_snapshots, fail_snapshots) = read_snapshots()
+    (enum_snapshots, inv_snapshots, pass_snapshots, fail_snapshots, has_passing, has_failing) = read_snapshots()
     snapshot_scores = compute_scores(use_complete_score, pass_snapshots, fail_snapshots)
 
     with open("snapshots-suspiciousness-score.csv", "w") as f:
@@ -70,6 +76,14 @@ def main():
         for snapshot, score in snapshot_scores.items():
             f.write(f"{snapshot[0]}\n")
         f.close()
+
+    if not has_passing and not has_failing:
+        print("No tests exercise the faulty method")
+    else:
+        if not has_passing:
+            print("No passing tests exercise the faulty method")
+        if not has_failing:
+            print("No failing tests exercise the faulty method")
 
 
 if __name__ == "__main__":
