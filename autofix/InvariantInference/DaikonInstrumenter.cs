@@ -97,6 +97,7 @@ public class DaikonInstrumenter(List<Identifier> identifierAvailability) : Visit
         if (blockStmt != faultyMethod?.Body)
             InstrumentLine(blockStmt.StartToken);
         foreach (var (stmt, i) in blockStmt.Body.Select((stmt, i) => (stmt, i))) {
+            if (stmt is PrintStmt) continue;
             _newBlockBody.Add(stmt);
             HandleStatement(stmt);
             if (stmt is ReturnStmt || 
@@ -119,6 +120,13 @@ public class DaikonInstrumenter(List<Identifier> identifierAvailability) : Visit
                 (token.pos > id.AvailabilityStartPos && token.pos < id.AvailabilityEndPos) || 
                 (id.AvailabilityStartPos == null && id.AvailabilityEndPos == null)
         ).DistinctBy(id => id.Name).ToList();
+        foreach (var identifier in availableIdentifiers.ToList()) {
+            var repType = DaikonFormatConverter.ToType(identifier.Type); 
+            var comparability = DaikonFormatConverter.GetComparability(identifier.Type);
+            if (repType == "" || comparability == "")
+                availableIdentifiers.Remove(identifier);
+        }
+        
         var newMethod = GenerateDummyMethod(token.pos, availableIdentifiers);
         if (newMethod == null) return;
 

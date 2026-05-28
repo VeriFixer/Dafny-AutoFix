@@ -168,14 +168,23 @@ echo -e "$(infer_invariants false $violation_line)\n"
 python3 "$SCRIPT_DIR/filter-invs.py"
 
 # Generate snapshots via enumeration and invariants
+
 echo -e "$(generate_snapshots $violation_line $related_location_line)\n"
 
 # Compute the suspiciousness score of each snapshot
+
 echo "Computing suspiciousness scores"
+output=""
 if [ "$STRATEGY" = "dynamic-and-static-score" ]; then
-    python3 "$SCRIPT_DIR/compute-suspiciousness.py"
+    output=$(python3 "$SCRIPT_DIR/compute-suspiciousness.py")
 else
-    python3 "$SCRIPT_DIR/compute-suspiciousness.py" short-score
+    output=$(python3 "$SCRIPT_DIR/compute-suspiciousness.py short-score")
 fi
 
-popd > /dev/null 2>&1
+# Check if there are tests exercising the faulty method
+has_no_tests=$(echo $output | grep "No tests exercise the faulty method")
+if [[ $has_no_tests ]]; then
+    echo $output 1>&2
+elif [[ -n $output ]]; then
+    echo $output
+fi

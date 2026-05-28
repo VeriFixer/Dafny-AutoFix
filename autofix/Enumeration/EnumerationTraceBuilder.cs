@@ -8,7 +8,7 @@ public sealed class EnumerationTraceBuilder : Visitor
 {
     private List<Identifier> IdentifierAvailability { get; }
     private List<string> Ghosts { get; }
-    private readonly Dictionary<Expression, List<string>> _exprIdentifiers;
+    private readonly Dictionary<Expression, List<(Expression, string)>> _exprIdentifiers;
     public List<Expression> AllEnumPreds => _exprIdentifiers.Keys.ToList();
 
     private Expression? _exprUnderVisit;
@@ -17,7 +17,7 @@ public sealed class EnumerationTraceBuilder : Visitor
     public EnumerationTraceBuilder(List<Identifier> identifierAvailability, List<string> ghosts) {
         IdentifierAvailability = identifierAvailability;
         Ghosts = ghosts;
-        _exprIdentifiers = new Dictionary<Expression, List<string>>();
+        _exprIdentifiers = new Dictionary<Expression, List<(Expression, string)>>();
         // identify the scope in which each program abstraction is observable according to the scope in which its subexpressions are defined
         foreach (var expr in SnapshotGenerator.ProgramAbstractions) {
             _exprIdentifiers[expr] = [];
@@ -43,8 +43,8 @@ public sealed class EnumerationTraceBuilder : Visitor
         _newBlockBody = [];
         InstrumentLine(blockStmt.StartToken, blockStmt);
         foreach (var stmt in blockStmt.Body) {
-            _newBlockBody.Add(stmt);
             if (stmt is PrintStmt) continue;
+            _newBlockBody.Add(stmt);
             HandleStatement(stmt);
             InstrumentLine(stmt.EndToken, stmt);
         }
@@ -55,12 +55,12 @@ public sealed class EnumerationTraceBuilder : Visitor
 
     protected override void VisitExpression(NameSegment nSegExpr) {
         if (_exprUnderVisit != null)
-            _exprIdentifiers[_exprUnderVisit].Add(nSegExpr.Name);
+            _exprIdentifiers[_exprUnderVisit].Add((nSegExpr, nSegExpr.Name));
     }
 
     protected override void VisitExpression(IdentifierExpr idExpr) {
         if (_exprUnderVisit != null)
-            _exprIdentifiers[_exprUnderVisit].Add(idExpr.Name);
+            _exprIdentifiers[_exprUnderVisit].Add((idExpr, idExpr.Name));
     }
 
     /// -------------------------
@@ -74,10 +74,10 @@ public sealed class EnumerationTraceBuilder : Visitor
             var seqSelectSubExprs = Enumerator.SeqSelectExprs
                 .Where(e => expr.ToString().Contains(e.ToString())).ToList();
             if (seqSelectSubExprs.Count > 0)
-                seqSafetyCheckedExpr = HandleSeqSelectExpr(seqSelectSubExprs) ?? null;
+                seqSafetyCheckedExpr = HandleSeqSelectExpr(seqSelectSubExprs);
             var mapSelectSubExprs = Enumerator.MapSelectExprs
                 .Where(e => expr.ToString().Contains(e.ToString())).ToList();
-            if (seqSelectSubExprs.Count > 0)
+            if (mapSelectSubExprs.Count > 0)
                 mapSafetyCheckedExpr = HandleMapSelectExpr(mapSelectSubExprs);
             Expression? safetyCheckedExpr = seqSafetyCheckedExpr != null ? mapSafetyCheckedExpr != null ? 
                 Expression.CreateAnd(Expression.CreateAnd(seqSafetyCheckedExpr, mapSafetyCheckedExpr), expr) : 
@@ -121,16 +121,19 @@ public sealed class EnumerationTraceBuilder : Visitor
 
         Expression? firstInBoundsExpr = null;
         Expression? secondInBoundsExpr = null;
+        Expression? lowLeHigher = null;
         if (seqSelExpr.E0 != null)
             firstInBoundsExpr = Expression.CreateAnd(
                 Expression.CreateAtMost(zeroExpr, seqSelExpr.E0),
                 Expression.CreateLess(seqSelExpr.E0, lengthExpr));
         if (seqSelExpr.E1 != null)
             secondInBoundsExpr = Expression.CreateAnd(
-                Expression.CreateLess(zeroExpr, seqSelExpr.E1),
+                Expression.CreateAtMost(zeroExpr, seqSelExpr.E1),
                 Expression.CreateLess(seqSelExpr.E1, lengthExpr));
+        if (firstInBoundsExpr != null && secondInBoundsExpr != null)
+            lowLeHigher = Expression.CreateAtMost(seqSelExpr.E0, seqSelExpr.E1);
         Expression? inBoundsExpr = firstInBoundsExpr != null ? secondInBoundsExpr != null ? 
-            Expression.CreateAnd(firstInBoundsExpr, secondInBoundsExpr) : 
+            Expression.CreateAnd(Expression.CreateAnd(firstInBoundsExpr, secondInBoundsExpr), lowLeHigher) : 
             firstInBoundsExpr : secondInBoundsExpr;
         if (inBoundsExpr == null) return null;
 
@@ -162,21 +165,52 @@ public sealed class EnumerationTraceBuilder : Visitor
                 continue;
             
             var allIdentifiersAreAvailable = true;
+            var identifierVars = new Dictionary<string, Identifier?>();
             foreach (var id in exprIdentifiers) {
-                if (Ghosts.Contains(id)) {
+                if (Ghosts.Contains(id.Item2)) {
                     allIdentifiersAreAvailable = false;
                     break;
                 }
-                var identifiers = IdentifierAvailability.FindAll(i => i.Name == id);
-                if (!identifiers.Any(i => 
+                var identifiers = IdentifierAvailability.FindAll(i => i.Name == id.Item2);
+                var identifier = identifiers.FirstOrDefault(i =>
                     (pos > i.AvailabilityStartPos && pos < i.AvailabilityEndPos) ||
-                    (i.AvailabilityStartPos == null && i.AvailabilityEndPos == null)))
+                    (i.AvailabilityStartPos == null && i.AvailabilityEndPos == null));
+                if (identifier == null) {
                     allIdentifiersAreAvailable = false;
-                if (!allIdentifiersAreAvailable) break;
+                    break;
+                }
+                identifierVars.TryAdd(identifier.Name, identifier);
             }
-            if (allIdentifiersAreAvailable)
-                availableExprs.Add(expr);
+            if (!allIdentifiersAreAvailable) continue;
+            var updatedExpr = EnsureSubExpressionIVarCompatibility(expr, identifierVars);
+            availableExprs.Add(updatedExpr ?? expr);
         }
         return availableExprs;
+    }
+    
+    private Expression? EnsureSubExpressionIVarCompatibility(Expression expr, Dictionary<string, Identifier?> ids) {
+        var cloner = new Cloner(false, true);
+        var updatedExpr = cloner.CloneExpr(expr);
+        _exprIdentifiers[updatedExpr] = [];
+        _exprUnderVisit = updatedExpr;
+        HandleExpression(updatedExpr);
+        _exprUnderVisit = null;
+        
+        if (!_exprIdentifiers.TryGetValue(updatedExpr, out var exprIdentifiers) || exprIdentifiers.Count == 0)
+            return null;
+        
+        foreach (var subExpr in exprIdentifiers) {
+            var idName = subExpr.Item2;
+            if (!ids.TryGetValue(idName, out var id) || id == null)
+                continue;
+            
+            if (subExpr.Item1 is NameSegment nSegExpr && 
+                nSegExpr.ResolvedExpression is IdentifierExpr idExpr1) {
+                idExpr1.Var = id.Var;
+            } else if (subExpr.Item1 is IdentifierExpr idExpr2) {
+                idExpr2.Var = id.Var;
+            }
+        }
+        return updatedExpr;
     }
 }

@@ -65,7 +65,7 @@ public sealed class ExpressionDependenceAnalyzer : Visitor
         if (_eProxs.Count == 0) return 0.0;
         var maxDist = (double)_eProxs.Values.Max();
         if (_eProxs.ContainsKey(pred.ToString()))
-            return _eProxs[pred.ToString()] / maxDist;
+            return maxDist != 0 ? _eProxs[pred.ToString()] / maxDist : 1.0;
         return 0.0;
     }
 }
