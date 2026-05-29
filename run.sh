@@ -174,17 +174,8 @@ echo -e "$(generate_snapshots $violation_line $related_location_line)\n"
 # Compute the suspiciousness score of each snapshot
 
 echo "Computing suspiciousness scores"
-output=""
 if [ "$STRATEGY" = "dynamic-and-static-score" ]; then
-    output=$(python3 "$SCRIPT_DIR/compute-suspiciousness.py")
+    python3 "compute-suspiciousness.py"
 else
-    output=$(python3 "$SCRIPT_DIR/compute-suspiciousness.py short-score")
-fi
-
-# Check if there are tests exercising the faulty method
-has_no_tests=$(echo $output | grep "No tests exercise the faulty method")
-if [[ $has_no_tests ]]; then
-    echo $output 1>&2
-elif [[ -n $output ]]; then
-    echo $output
+    python3 "compute-suspiciousness.py short-score"
 fi
