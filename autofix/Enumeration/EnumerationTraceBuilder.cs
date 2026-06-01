@@ -105,7 +105,7 @@ public sealed class EnumerationTraceBuilder : Visitor
     }
 
     private Expression? HandleSeqSelectExpr(List<Expression> selectExprs) {
-        if (selectExprs.Count == 0 || selectExprs[0] is not SeqSelectExpr seqSelExpr) 
+        if (selectExprs.Count == 0 || selectExprs[0] is not SeqSelectExpr seqSelExpr)
             return null;
 
         var token = seqSelExpr.Seq.Origin;
@@ -135,12 +135,11 @@ public sealed class EnumerationTraceBuilder : Visitor
         Expression? inBoundsExpr = firstInBoundsExpr != null ? secondInBoundsExpr != null ? 
             Expression.CreateAnd(Expression.CreateAnd(firstInBoundsExpr, secondInBoundsExpr), lowLeHigher) : 
             firstInBoundsExpr : secondInBoundsExpr;
-        if (inBoundsExpr == null) return null;
 
         if (selectExprs.Count > 1) {
             var nextExpr = HandleSeqSelectExpr(selectExprs[1..]);
             if (nextExpr != null)
-                return Expression.CreateAnd(inBoundsExpr, nextExpr);
+                return inBoundsExpr != null ? Expression.CreateAnd(inBoundsExpr, nextExpr) : nextExpr;
         }
         return inBoundsExpr;
     }
