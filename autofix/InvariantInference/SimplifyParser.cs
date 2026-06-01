@@ -196,6 +196,8 @@ public class SimplifyExpression
         if (op == BinaryExpr.Opcode.Mod && argExprs[1] != null)
             _exprsNeedingNonZeroCheck.Add(argExprs[1]);
         
+        if ((op == BinaryExpr.Opcode.Ge || op == BinaryExpr.Opcode.Gt) && argType?.ToString() == "string")
+            return null;
         if (op == BinaryExpr.Opcode.Eq && _replaceArraySelectionWithMembership != null)
             return ToArrayMembershipExpression(_replaceArraySelectionWithMembership, argExprs[1]);
         if (op == BinaryExpr.Opcode.Add || op == BinaryExpr.Opcode.Sub ||
