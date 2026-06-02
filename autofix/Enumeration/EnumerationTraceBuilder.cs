@@ -56,7 +56,7 @@ public sealed class EnumerationTraceBuilder : Visitor
     }
     
     protected override void HandleExpression(Expression expr) {
-        if (_isUpdatingChildrenResolvedExprs && expr.Resolved != null)
+        if (_isUpdatingChildrenResolvedExprs && expr.WasResolved() && expr.Resolved != null)
             UpdateSubExpressionIVars(expr.Resolved);
         if (_isUpdatingChildrenResolvedExprs && expr is ConcreteSyntaxExpression cSynExpr)
             UpdateSubExpressionIVars(cSynExpr.ResolvedExpression);
