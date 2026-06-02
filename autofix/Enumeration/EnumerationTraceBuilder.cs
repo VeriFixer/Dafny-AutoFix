@@ -14,7 +14,7 @@ public sealed class EnumerationTraceBuilder : Visitor
     private Expression? _exprUnderVisit;
     private List<Statement> _newBlockBody = [];
     private bool _isUpdatingChildrenResolvedExprs;
-    private Dictionary<string, Identifier?> _exprUnderVisitIdentifierVars = [];
+    private Dictionary<string, Identifier> _availableIdentifierVars = [];
     
     public EnumerationTraceBuilder(List<Identifier> identifierAvailability, List<string> ghosts) {
         IdentifierAvailability = identifierAvailability;
@@ -149,9 +149,9 @@ public sealed class EnumerationTraceBuilder : Visitor
         if (selectExprs.Count > 1) {
             var nextExpr = HandleSeqSelectExpr(selectExprs[1..]);
             if (nextExpr != null)
-                return inBoundsExpr != null ? Expression.CreateAnd(inBoundsExpr, nextExpr) : nextExpr;
+                inBoundsExpr = inBoundsExpr != null ? Expression.CreateAnd(inBoundsExpr, nextExpr) : nextExpr;
         }
-        return inBoundsExpr;
+        return EnsureSubExpressionIVarCompatibility(inBoundsExpr);
     }
     
     private Expression? HandleMapSelectExpr(List<Expression> selectExprs) {
@@ -162,33 +162,34 @@ public sealed class EnumerationTraceBuilder : Visitor
         if (selectExprs.Count > 1) {
             var nextExpr = HandleMapSelectExpr(selectExprs[1..]);
             if (nextExpr != null)
-                return Expression.CreateAnd(inMapExpr, nextExpr);
+                inMapExpr = Expression.CreateAnd(inMapExpr, nextExpr);
         }
-        return inMapExpr;
+        return EnsureSubExpressionIVarCompatibility(inMapExpr);
     }
     
     private List<Expression> DetermineExpressionAvailability(int pos) {
         List<Expression> availableExprs = [];
+        _availableIdentifierVars = new Dictionary<string, Identifier>(IdentifierAvailability.FindAll(i =>
+                (pos > i.AvailabilityStartPos && pos < i.AvailabilityEndPos) ||
+                (i.AvailabilityStartPos == null && i.AvailabilityEndPos == null))
+            .DistinctBy(i => i.Name)
+            .Select(i => new KeyValuePair<string, Identifier>(i.Name, i)));
+        
         foreach (var expr in SnapshotGenerator.ProgramAbstractions) {
             if (!_exprIdentifiers.TryGetValue(expr, out var exprIdentifiers) || exprIdentifiers.Count == 0)
                 continue;
             
             var allIdentifiersAreAvailable = true;
-            _exprUnderVisitIdentifierVars = [];
             foreach (var id in exprIdentifiers) {
                 if (Ghosts.Contains(id.Item2)) {
                     allIdentifiersAreAvailable = false;
                     break;
                 }
-                var identifiers = IdentifierAvailability.FindAll(i => i.Name == id.Item2);
-                var identifier = identifiers.FirstOrDefault(i =>
-                    (pos > i.AvailabilityStartPos && pos < i.AvailabilityEndPos) ||
-                    (i.AvailabilityStartPos == null && i.AvailabilityEndPos == null));
+                var identifier = _availableIdentifierVars.FirstOrDefault(i => i.Key == id.Item2).Value;
                 if (identifier == null) {
                     allIdentifiersAreAvailable = false;
                     break;
                 }
-                _exprUnderVisitIdentifierVars.TryAdd(identifier.Name, identifier);
             }
             if (!allIdentifiersAreAvailable) continue;
             var updatedExpr = EnsureSubExpressionIVarCompatibility(expr);
@@ -227,7 +228,7 @@ public sealed class EnumerationTraceBuilder : Visitor
     private void UpdateSubExpressionIVars(List<(Expression, string)> exprIdentifiers) {
         foreach (var subExpr in exprIdentifiers) {
             var idName = subExpr.Item2;
-            if (!_exprUnderVisitIdentifierVars.TryGetValue(idName, out var id) || id == null)
+            if (!_availableIdentifierVars.TryGetValue(idName, out var id) || id == null)
                 continue;
             
             if (subExpr.Item1 is NameSegment nSegExpr && 
