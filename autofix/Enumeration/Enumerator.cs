@@ -23,7 +23,7 @@ public class Enumerator() : IdentifierAvailabilityScanner(true)
     private bool _isSecondVisit;
     private bool _consultingChildrenExprs;
     private bool _hasOldExprChild;
-    private int _outerLoopCount;
+    private int _loopCount;
     
     /// -------------------------
     /// General AST node visitors
@@ -127,10 +127,9 @@ public class Enumerator() : IdentifierAvailabilityScanner(true)
 
     protected override void VisitStatement(LoopStmt loopStmt) {
         if (loopStmt is OneBodyLoopStmt oneBodyLoopStmt && !_isSecondVisit && _currentBlock != null)
-            AstUtils.LimitLoopIterations(oneBodyLoopStmt, _currentBlock, _outerLoopCount);
-        _outerLoopCount++;
+            AstUtils.LimitLoopIterations(oneBodyLoopStmt, _currentBlock, _loopCount);
+        _loopCount++;
         base.VisitStatement(loopStmt);
-        _outerLoopCount--;
     }
 
     protected override void VisitExpression(SeqSelectExpr seqSExpr) {
