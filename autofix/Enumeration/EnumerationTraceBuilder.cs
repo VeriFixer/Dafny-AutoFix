@@ -13,6 +13,8 @@ public sealed class EnumerationTraceBuilder : Visitor
 
     private Expression? _exprUnderVisit;
     private List<Statement> _newBlockBody = [];
+    private bool _isUpdatingChildrenResolvedExprs;
+    private Dictionary<string, Identifier?> _exprUnderVisitIdentifierVars = [];
     
     public EnumerationTraceBuilder(List<Identifier> identifierAvailability, List<string> ghosts) {
         IdentifierAvailability = identifierAvailability;
@@ -51,6 +53,14 @@ public sealed class EnumerationTraceBuilder : Visitor
         blockStmt.Body.Clear();
         blockStmt.Body.AddRange(_newBlockBody);
         _newBlockBody = prevNewBlock;
+    }
+    
+    protected override void HandleExpression(Expression expr) {
+        if (_isUpdatingChildrenResolvedExprs && expr.Resolved != null)
+            UpdateSubExpressionIVars(expr.Resolved);
+        if (_isUpdatingChildrenResolvedExprs && expr is ConcreteSyntaxExpression cSynExpr)
+            UpdateSubExpressionIVars(cSynExpr.ResolvedExpression);
+        base.HandleExpression(expr);
     }
 
     protected override void VisitExpression(NameSegment nSegExpr) {
@@ -164,7 +174,7 @@ public sealed class EnumerationTraceBuilder : Visitor
                 continue;
             
             var allIdentifiersAreAvailable = true;
-            var identifierVars = new Dictionary<string, Identifier?>();
+            _exprUnderVisitIdentifierVars = [];
             foreach (var id in exprIdentifiers) {
                 if (Ghosts.Contains(id.Item2)) {
                     allIdentifiersAreAvailable = false;
@@ -178,29 +188,46 @@ public sealed class EnumerationTraceBuilder : Visitor
                     allIdentifiersAreAvailable = false;
                     break;
                 }
-                identifierVars.TryAdd(identifier.Name, identifier);
+                _exprUnderVisitIdentifierVars.TryAdd(identifier.Name, identifier);
             }
             if (!allIdentifiersAreAvailable) continue;
-            var updatedExpr = EnsureSubExpressionIVarCompatibility(expr, identifierVars);
+            var updatedExpr = EnsureSubExpressionIVarCompatibility(expr);
             availableExprs.Add(updatedExpr ?? expr);
         }
         return availableExprs;
     }
     
-    private Expression? EnsureSubExpressionIVarCompatibility(Expression expr, Dictionary<string, Identifier?> ids) {
+    private Expression? EnsureSubExpressionIVarCompatibility(Expression? expr) {
+        if (expr == null) return null;
         var cloner = new Cloner(false, true);
         var updatedExpr = cloner.CloneExpr(expr);
-        _exprIdentifiers[updatedExpr] = [];
-        _exprUnderVisit = updatedExpr;
-        HandleExpression(updatedExpr);
+        UpdateSubExpressionIVars(updatedExpr);
+        return updatedExpr;
+    }
+    
+    private void UpdateSubExpressionIVars(Expression expr) {
+        var prevIsUpdatingChildrenResolvedExprs = _isUpdatingChildrenResolvedExprs;
+        _isUpdatingChildrenResolvedExprs = false;
+        _exprIdentifiers[expr] = [];
+        _exprUnderVisit = expr;
+        HandleExpression(expr);
+        _isUpdatingChildrenResolvedExprs = prevIsUpdatingChildrenResolvedExprs;
         _exprUnderVisit = null;
-        
-        if (!_exprIdentifiers.TryGetValue(updatedExpr, out var exprIdentifiers) || exprIdentifiers.Count == 0)
-            return null;
-        
+        if (!_exprIdentifiers.TryGetValue(expr, out var exprIdentifiers) || exprIdentifiers.Count == 0)
+            return;
+        UpdateSubExpressionIVars(exprIdentifiers);
+
+        if (!_isUpdatingChildrenResolvedExprs) {
+            _isUpdatingChildrenResolvedExprs = true;
+            HandleExpression(expr);
+            _isUpdatingChildrenResolvedExprs = false;
+        }
+    }
+
+    private void UpdateSubExpressionIVars(List<(Expression, string)> exprIdentifiers) {
         foreach (var subExpr in exprIdentifiers) {
             var idName = subExpr.Item2;
-            if (!ids.TryGetValue(idName, out var id) || id == null)
+            if (!_exprUnderVisitIdentifierVars.TryGetValue(idName, out var id) || id == null)
                 continue;
             
             if (subExpr.Item1 is NameSegment nSegExpr && 
@@ -210,6 +237,5 @@ public sealed class EnumerationTraceBuilder : Visitor
                 idExpr2.Var = id.Var;
             }
         }
-        return updatedExpr;
     }
 }
