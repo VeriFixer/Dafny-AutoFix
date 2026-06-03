@@ -1,9 +1,5 @@
 ﻿using Microsoft.Dafny;
 using Microsoft.Z3;
-using Function = Microsoft.Dafny.Function;
-using LiteralExpr = Microsoft.Dafny.LiteralExpr;
-using MapType = Microsoft.Dafny.MapType;
-using OldExpr = Microsoft.Dafny.OldExpr;
 using Type = Microsoft.Dafny.Type;
 
 namespace AutoFix.Enumeration;
@@ -23,7 +19,8 @@ public class Enumerator() : IdentifierAvailabilityScanner(true)
     private bool _isSecondVisit;
     private bool _consultingChildrenExprs;
     private bool _hasOldExprChild;
-    private int _outerLoopCount;
+    private bool _hasFreshExprChild;
+    private int _loopCount;
     
     /// -------------------------
     /// General AST node visitors
@@ -127,10 +124,9 @@ public class Enumerator() : IdentifierAvailabilityScanner(true)
 
     protected override void VisitStatement(LoopStmt loopStmt) {
         if (loopStmt is OneBodyLoopStmt oneBodyLoopStmt && !_isSecondVisit && _currentBlock != null)
-            AstUtils.LimitLoopIterations(oneBodyLoopStmt, _currentBlock, _outerLoopCount);
-        _outerLoopCount++;
+            AstUtils.LimitLoopIterations(oneBodyLoopStmt, _currentBlock, _loopCount);
+        _loopCount++;
         base.VisitStatement(loopStmt);
-        _outerLoopCount--;
     }
 
     protected override void VisitExpression(SeqSelectExpr seqSExpr) {
@@ -160,6 +156,11 @@ public class Enumerator() : IdentifierAvailabilityScanner(true)
     protected override void VisitExpression(OldExpr oldExpr) {
         _hasOldExprChild = true;
         base.VisitExpression(oldExpr);
+    }
+    
+    protected override void VisitExpression(FreshExpr freshExpr) {
+        _hasFreshExprChild = true;
+        base.VisitExpression(freshExpr);
     }
 
     /// -------------------------
@@ -219,10 +220,12 @@ public class Enumerator() : IdentifierAvailabilityScanner(true)
     private void CollectBoolExprsFromIntegers(Expression intExpr1, Expression intExpr2) {
         var intCompExpr = Expression.CreateEq(intExpr1, intExpr2, Type.Int);
         AddExpression(intCompExpr, SnapshotGenerator.ProgramAbstractions);
-        intCompExpr = Expression.CreateLess(intExpr1, intExpr2);
-        AddExpression(intCompExpr, SnapshotGenerator.ProgramAbstractions);
-        intCompExpr = Expression.CreateAtMost(intExpr1, intExpr2);
-        AddExpression(intCompExpr, SnapshotGenerator.ProgramAbstractions);
+        if (intExpr1.Type != null && intExpr2.Type != null) {
+            intCompExpr = Expression.CreateLess(intExpr1, intExpr2);
+            AddExpression(intCompExpr, SnapshotGenerator.ProgramAbstractions);
+            intCompExpr = Expression.CreateAtMost(intExpr1, intExpr2);
+            AddExpression(intCompExpr, SnapshotGenerator.ProgramAbstractions); 
+        }
     }
 
     private void CollectBoolExprFromNullableRef(Expression expr) {
@@ -285,14 +288,15 @@ public class Enumerator() : IdentifierAvailabilityScanner(true)
     /// Utils
     /// -------------------------
     private void AddExpression(Expression expr, List<Expression> collection) {
-        if (_consultingChildrenExprs || 
+        if (expr.Type == null || _consultingChildrenExprs || 
             expr is ApplySuffix { ResolvedExpression: FunctionCallExpr fCallExpr } &&
             fCallExpr.Function.IsGhost) return;
         _hasOldExprChild = false;
+        _hasFreshExprChild = false;
         _consultingChildrenExprs = true;
         HandleExpression(expr);
         _consultingChildrenExprs = false;
-        if (_hasOldExprChild) return;
+        if (_hasOldExprChild || _hasFreshExprChild) return;
         
         if (!ExprAlreadyCollected(expr, collection) && !ExprIsRedundant(expr, collection))
             collection.Add(expr);

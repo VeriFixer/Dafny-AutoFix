@@ -18,6 +18,8 @@ def read_snapshots():
                 current_test_case_snapshots = set()
             elif passing != None:
                 full_snapshot = tuple(line.strip().split(';'))
+                if len(full_snapshot) != 7:
+                    continue
                 snapshot = full_snapshot[:6]
                 collection = enum_snapshots if full_snapshot[6] == "enum" else inv_snapshots
                 collection.add(snapshot)

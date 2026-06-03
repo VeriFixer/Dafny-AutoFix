@@ -204,20 +204,20 @@ public static class AstUtils
         }
     }
 
-    public static void LimitLoopIterations(OneBodyLoopStmt loopStmt, BlockStmt enclosingBlock, int outerLoopCount) {
+    public static void LimitLoopIterations(OneBodyLoopStmt loopStmt, BlockStmt enclosingBlock, int loopCount) {
         var stmtPositionInCurrentBlock = enclosingBlock.Body.IndexOf(loopStmt);
         if (stmtPositionInCurrentBlock == -1) return;
         
         var token = enclosingBlock.Body[stmtPositionInCurrentBlock].StartToken;
-        var varName = $"iter_counter{outerLoopCount}'";
-        var iterationCounterInit = InitializeIterCounter(token, varName, outerLoopCount);
+        var varName = $"iter_counter{loopCount}'";
+        var iterationCounterInit = InitializeIterCounter(token, varName, loopCount);
         enclosingBlock.Body.Insert(stmtPositionInCurrentBlock, iterationCounterInit);
         var iterationCounter = new NameSegment(token, varName, null);
         ResolveNameSegment(iterationCounter, Identifier.ToIdentifier(IterCounterVars[varName]));
 
         token = loopStmt.StartToken;
         var maxIterationsReached = CreateAtLeast(iterationCounter, Expression.CreateIntLiteral(token, 50));
-        var breakStmt = new BreakOrContinueStmt(token, outerLoopCount + 1, false);
+        var breakStmt = new BreakOrContinueStmt(token, loopCount + 1, false);
         breakStmt.TargetStmt = loopStmt;
         var ifMaxIterBreakStmt = new IfStmt(
             token, false, maxIterationsReached, 

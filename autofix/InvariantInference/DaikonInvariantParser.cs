@@ -29,7 +29,7 @@ public class DaikonInvariantParser : Visitor
         var lines = File.ReadAllLines("inv.inv");
         foreach (var line in lines) {
             if (line.EndsWith(":::ENTER") || line.Contains(":::EXIT")) {
-                if (line.Contains(faultyMethod.Name) && line.Contains(_enclosingClassName)) {
+                if (line.Contains($"{faultyMethod.Name}()") && line.Contains(_enclosingClassName)) {
                     location = line.EndsWith(":::ENTER") ? faultyMethod.Body.StartToken.pos : 
                         _lastStmtReturn.Item1 == null ? faultyMethod.Body.EndToken.pos : _lastStmtReturn.Item2;
                 } else if (line.Contains("Dummy")) {
@@ -216,7 +216,7 @@ public class DaikonInvariantParser : Visitor
     private PrintStmt PrintInvariant(Expression invariantExpr, int line, int location, Statement placementRefStmt) {
         var lineElement = Expression.CreateIntLiteral(null, line);
         var posElement = Expression.CreateIntLiteral(null, location);
-        var exprStrElement = AstUtils.CreateStringLiteral(null, invariantExpr.ToString());
+        var exprStrElement = AstUtils.CreateStringLiteral(null, invariantExpr.ToString().Replace("\"", "\\\""));
         var snapshotCDep = SnapshotGenerator.CDepAnalyzer?.ComputeCDep(location, placementRefStmt) ?? 0.0;
         var snapshotCDepElement = Expression.CreateRealLiteral(null, BigDec.FromString($"{snapshotCDep}".Replace(',', '.')));
         var delimElement1 = AstUtils.CreateStringLiteral(null, ";");

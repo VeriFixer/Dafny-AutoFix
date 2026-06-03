@@ -22,6 +22,7 @@ public class SimplifyExpression
     private static Expression? _replaceArraySelectionWithMembership;
     private static Type? _sibblingNodeType;
     private static List<(Expression?, Type?)> _forallBoundVars = [];
+    private static List<Type?> _argVarTypes;
 
     private SimplifyExpression(SimplifyToken t, List<SimplifyExpression> args) {
         _t = t;
@@ -102,7 +103,8 @@ public class SimplifyExpression
                 return [null];
             }
         }
-        
+
+        _argVarTypes = GetArgVarTypes();
         var argExprs = _args.Select(arg => arg.ToExpression()).SelectMany(exprList => exprList).ToList();
         _isTopLevelExpr = prevIsTopLevelExpr;
         _isTopLevelForallExpr = prevIsTopLevelForallExpr;
@@ -194,6 +196,8 @@ public class SimplifyExpression
         if (op == BinaryExpr.Opcode.Mod && argExprs[1] != null)
             _exprsNeedingNonZeroCheck.Add(argExprs[1]);
         
+        if ((op == BinaryExpr.Opcode.Ge || op == BinaryExpr.Opcode.Gt) && argType?.ToString() == "string")
+            return null;
         if (op == BinaryExpr.Opcode.Eq && _replaceArraySelectionWithMembership != null)
             return ToArrayMembershipExpression(_replaceArraySelectionWithMembership, argExprs[1]);
         if (op == BinaryExpr.Opcode.Add || op == BinaryExpr.Opcode.Sub ||
@@ -233,10 +237,10 @@ public class SimplifyExpression
     private Expression? ToStringExpression() {
         var strValue = ((StringSimplifyToken)_t).Value;
         LiteralExpr? expr = _sibblingNodeType switch {
-            CharType => new CharLiteralExpr(null, strValue) {Type = Type.Char},
+            CharType => new CharLiteralExpr(null, strValue),
             SeqType or SetType or MultiSetType or MapType => null, // TODO
             UserDefinedType uType when uType.Name.StartsWith("array") => null, // TODO
-            _ => new StringLiteralExpr(null, strValue, false) {Type = Type.String()}
+            _ => new StringLiteralExpr(null, strValue, false)
         };
         var type = _sibblingNodeType switch {
             CharType => Type.Char,
@@ -250,7 +254,13 @@ public class SimplifyExpression
         return expr;
     }
 
-    private Expression ToIntLiteralExpression() {
+    private Expression? ToIntLiteralExpression() {
+        var type = _argVarTypes.FirstOrDefault();
+        if (_argVarTypes.All(a => a == _argVarTypes.FirstOrDefault()) || type == null)
+            return null;
+        
+        if (type == Type.Real)
+            return ToRealLiteralExpression();
         var intExpr = new LiteralExpr(null, ((IntSimplifyToken)_t).Value);
         AllGeneratedExprsTypes.Add((intExpr, Type.Int));
         return intExpr;
@@ -420,6 +430,12 @@ public class SimplifyExpression
                 null, type[..type.IndexOf("<")], [GetType(type[(type.IndexOf("<") + 1)..^1])]),
             _ => null
         };
+    }
+
+    private List<Type?> GetArgVarTypes() {
+        return _args.Where(a => a._t.Type is SimplifyToken.SimplifyTokenType.Var)
+            .Select(a => GetTypeFromVarName(((VarSimplifyToken)a._t).Name))
+            .ToList();
     }
 }
 
