@@ -206,7 +206,8 @@ public sealed class EnumerationTraceBuilder : Visitor
         return updatedExpr;
     }
     
-    private void UpdateSubExpressionIVars(Expression expr) {
+    private void UpdateSubExpressionIVars(Expression? expr) {
+        if (expr == null) return;
         var prevIsUpdatingChildrenResolvedExprs = _isUpdatingChildrenResolvedExprs;
         _isUpdatingChildrenResolvedExprs = false;
         _exprIdentifiers[expr] = [];

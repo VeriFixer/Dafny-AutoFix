@@ -373,6 +373,8 @@ public abstract class Visitor
     
     protected virtual void VisitExpression(UnaryExpr uExpr) {
         HandleExpression(uExpr.E);
+        if (uExpr is FreshExpr freshExpr)
+            VisitExpression(freshExpr);
     }
     
     protected virtual void VisitExpression(ParensExpression pExpr) {
@@ -509,6 +511,8 @@ public abstract class Visitor
     protected virtual void VisitExpression(OldExpr oldExpr) {
         HandleExpression(oldExpr.Expr);
     }
+    
+    protected virtual void VisitExpression(FreshExpr freshExpr) { }
     
     protected virtual void VisitExpression(UnchangedExpr unchExpr) {
         var exprs = unchExpr.Frame.Select(e => e.E).ToList();
