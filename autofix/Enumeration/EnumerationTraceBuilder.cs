@@ -97,7 +97,7 @@ public sealed class EnumerationTraceBuilder : Visitor
             
             var lineElement = Expression.CreateIntLiteral(token, token.line);
             var posElement = Expression.CreateIntLiteral(token, token.pos);
-            var exprStrElement = AstUtils.CreateStringLiteral(token, expr.ToString());
+            var exprStrElement = AstUtils.CreateStringLiteral(token, expr.ToString().Replace("\"", "\\\""));
             var snapshotCDep = SnapshotGenerator.CDepAnalyzer?.ComputeCDep(token.pos, placementRefStmt) ?? 0.0;
             var snapshotCDepElement = Expression.CreateRealLiteral(null, BigDec.FromString($"{snapshotCDep}".Replace(',', '.')));
             var snapshotEDep = SnapshotGenerator.EDepAnalyzer?.ComputeEDep(expr) ?? 0.0;

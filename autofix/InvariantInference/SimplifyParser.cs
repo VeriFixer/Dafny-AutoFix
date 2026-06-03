@@ -237,10 +237,10 @@ public class SimplifyExpression
     private Expression? ToStringExpression() {
         var strValue = ((StringSimplifyToken)_t).Value;
         LiteralExpr? expr = _sibblingNodeType switch {
-            CharType => new CharLiteralExpr(null, strValue) {Type = Type.Char},
+            CharType => new CharLiteralExpr(null, strValue),
             SeqType or SetType or MultiSetType or MapType => null, // TODO
             UserDefinedType uType when uType.Name.StartsWith("array") => null, // TODO
-            _ => new StringLiteralExpr(null, strValue, false) {Type = Type.String()}
+            _ => new StringLiteralExpr(null, strValue, false)
         };
         var type = _sibblingNodeType switch {
             CharType => Type.Char,

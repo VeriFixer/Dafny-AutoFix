@@ -216,7 +216,7 @@ public class DaikonInvariantParser : Visitor
     private PrintStmt PrintInvariant(Expression invariantExpr, int line, int location, Statement placementRefStmt) {
         var lineElement = Expression.CreateIntLiteral(null, line);
         var posElement = Expression.CreateIntLiteral(null, location);
-        var exprStrElement = AstUtils.CreateStringLiteral(null, invariantExpr.ToString());
+        var exprStrElement = AstUtils.CreateStringLiteral(null, invariantExpr.ToString().Replace("\"", "\\\""));
         var snapshotCDep = SnapshotGenerator.CDepAnalyzer?.ComputeCDep(location, placementRefStmt) ?? 0.0;
         var snapshotCDepElement = Expression.CreateRealLiteral(null, BigDec.FromString($"{snapshotCDep}".Replace(',', '.')));
         var delimElement1 = AstUtils.CreateStringLiteral(null, ";");
