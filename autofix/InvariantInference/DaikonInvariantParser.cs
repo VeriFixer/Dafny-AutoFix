@@ -29,7 +29,7 @@ public class DaikonInvariantParser : Visitor
         var lines = File.ReadAllLines("inv.inv");
         foreach (var line in lines) {
             if (line.EndsWith(":::ENTER") || line.Contains(":::EXIT")) {
-                if (line.Contains(faultyMethod.Name) && line.Contains(_enclosingClassName)) {
+                if (line.Contains($"{faultyMethod.Name}()") && line.Contains(_enclosingClassName)) {
                     location = line.EndsWith(":::ENTER") ? faultyMethod.Body.StartToken.pos : 
                         _lastStmtReturn.Item1 == null ? faultyMethod.Body.EndToken.pos : _lastStmtReturn.Item2;
                 } else if (line.Contains("Dummy")) {
