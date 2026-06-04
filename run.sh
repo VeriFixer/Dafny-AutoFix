@@ -165,7 +165,7 @@ related_location_line=$(echo $related_location | grep -o '[0-9]*' | awk 'NR==1')
 echo "$(infer_invariants true $violation_line)"
 echo -e "$(infer_invariants false $violation_line)\n"
 # Filter invariants: we are interested in failing invariants that are not passing
-python3 "$SCRIPT_DIR/filter-invs.py"
+python "$SCRIPT_DIR/filter-invs.py"
 
 # Generate snapshots via enumeration and invariants
 
@@ -175,7 +175,7 @@ echo -e "$(generate_snapshots $violation_line $related_location_line)\n"
 
 echo "Computing suspiciousness scores"
 if [ "$STRATEGY" = "dynamic-and-static-score" ]; then
-    python3 "compute-suspiciousness.py"
+    python "$SCRIPT_DIR/compute-suspiciousness.py"
 else
-    python3 "compute-suspiciousness.py short-score"
+    python "$SCRIPT_DIR/compute-suspiciousness.py short-score"
 fi
