@@ -91,7 +91,7 @@ verify_program() {
         program=$(echo $PROGRAM | cut -d. -f1).dfy
     fi
     echo "Attempting to verify $program"
-    dotnet ./dafny/Binaries/Dafny.dll verify "$program" --solver-path ./dafny/Binaries/z3
+    dafny verify "$program"
 }
 
 infer_invariants() {
@@ -116,7 +116,7 @@ infer_invariants() {
     fi
 
     echo "Generating invariants for $passing_str tests"
-    dotnet run "$PROGRAM" \
+    dafny run "$PROGRAM" \
         --plugin $PLUGIN,"$inv_type_arg $violation_line $program" \
         --no-verify --allow-warnings \
          > "$trace_output_file"
@@ -133,7 +133,7 @@ generate_snapshots() {
     program=$(basename $(echo $PROGRAM | cut -d. -f1))
 
     echo "Generating snapshots"
-    dotnet run "$PROGRAM" \
+    dafny run "$PROGRAM" \
         --plugin $PLUGIN,"snap $violation_line $related_location_line $program" \
         --no-verify --allow-warnings \
          > snapshots.csv
