@@ -31,6 +31,9 @@ public class IdentifierAvailabilityScanner(bool multipleModule = false) : Visito
         }
         
         foreach (var member in decl.Members) {
+            if (AutoFix.TargetURI != "" && !member.Origin.Uri.LocalPath.Contains(AutoFix.TargetURI))
+                continue;
+            
             if (member is Method m) {
                 HandleMethod(m);  
             } else if (member is Function func) { // includes predicate
