@@ -85,14 +85,20 @@ PLUGIN="$REPO_ROOT/build_output/Autofix/AutoFix.dll"
 # ------------------------------------------------------------------------------ Utils
 
 verify_program() {
-    echo "Attempting to verify $PROGRAM"
-    dafny verify "$PROGRAM" 
+    program=$(echo $PROGRAM)
+    is_DSpec2Test=$(echo $PROGRAM | grep DSpec2Test)
+    if [[ $is_DSpec2Test ]]; then
+        program=$(echo $PROGRAM | cut -d. -f1).dfy
+    fi
+    echo "Attempting to verify $program"
+    dotnet ./dafny/Binaries/Dafny.dll verify "$program" --solver-path ./dafny/Binaries/z3
 }
 
 infer_invariants() {
     local passing="$1"
     local violation_line="$2"
 
+    program=$(basename $(echo $PROGRAM | cut -d. -f1))
     passing_str=""
     inv_type_arg=""
     trace_output_file=""
@@ -110,8 +116,8 @@ infer_invariants() {
     fi
 
     echo "Generating invariants for $passing_str tests"
-    dafny run "$PROGRAM" \
-        --plugin $PLUGIN,"$inv_type_arg $violation_line" \
+    dotnet run "$PROGRAM" \
+        --plugin $PLUGIN,"$inv_type_arg $violation_line $program" \
         --no-verify --allow-warnings \
          > "$trace_output_file"
 
@@ -124,9 +130,11 @@ generate_snapshots() {
     local violation_line="$1"
     local related_location_line="$2"
 
+    program=$(basename $(echo $PROGRAM | cut -d. -f1))
+
     echo "Generating snapshots"
-    dafny run "$PROGRAM" \
-        --plugin $PLUGIN,"snap $violation_line $related_location_line" \
+    dotnet run "$PROGRAM" \
+        --plugin $PLUGIN,"snap $violation_line $related_location_line $program" \
         --no-verify --allow-warnings \
          > snapshots.csv
     sed '1,2d' snapshots.csv > snapshots.tmp 

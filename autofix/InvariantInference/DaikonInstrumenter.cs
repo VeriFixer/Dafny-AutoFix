@@ -52,7 +52,8 @@ public class DaikonInstrumenter(List<Identifier> identifierAvailability) : Visit
             AutoFix.MainMethod = method;
         // find the faulty method, i.e., where the violation occurs  
         if (!(method.StartToken.line <= AutoFix.ViolationLine &&
-              method.EndToken.line >= AutoFix.ViolationLine))
+              method.EndToken.line >= AutoFix.ViolationLine) ||
+            (AutoFix.TargetURI != "" && !method.Origin.Uri.LocalPath.Contains(AutoFix.TargetURI)))
             return;
         AutoFix.FaultyMethod = method;
         

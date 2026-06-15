@@ -51,7 +51,8 @@ public class Enumerator() : IdentifierAvailabilityScanner(true)
         
         // find the faulty method, i.e., where the violation occurs  
         if (method.StartToken.line <= AutoFix.ViolationLine &&
-            method.EndToken.line >= AutoFix.ViolationLine) {
+            method.EndToken.line >= AutoFix.ViolationLine &&
+            (AutoFix.TargetURI == "" || method.Origin.Uri.LocalPath.Contains(AutoFix.TargetURI))) {
             AutoFix.FaultyMethod = method;
             AutoFix.FaultyModule = _currentModule;
         }

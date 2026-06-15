@@ -10,6 +10,7 @@ public class AutoFix : PluginConfiguration
 {
     public static int ViolationLine { get; private set; }
     public static int? RelatedLocationLine { get; private set; }
+    public static string TargetURI { get; set; } = "";
     public static bool DebugMode { get; private set; }
     private bool _snapshotGeneration;
     private bool _invariantInference;
@@ -23,7 +24,8 @@ public class AutoFix : PluginConfiguration
     public static ModuleDefinition? FaultyModule { get; set; }
     
     public override void ParseArguments(string[] args) {
-        if (args.Length < 2) return;
+        if (args.Length < 2)
+            return;
         if (args[0] == "snap") {
             _snapshotGeneration = true;
         } else if (args[0] == "inv_pass" || args[0] == "inv_fail" || args[0] == "inv_all") { 
@@ -39,10 +41,15 @@ public class AutoFix : PluginConfiguration
         }
         
         ViolationLine = int.Parse(args[1]);
-        if (args.Length > 2 && int.TryParse(args[2], out var arg))
+        if (args.Length > 2 && int.TryParse(args[2], out var arg)) {
             RelatedLocationLine = arg;
+            if (args.Length > 3)
+                TargetURI = args[3];
+        } else if (args.Length > 2) {
+            TargetURI = args[2];
+        }
         
-        if (args is [_, _, "debug"] or [_, _, _, "debug"])
+        if (args[^1] == "debug")
             DebugMode = true;
     }
     
