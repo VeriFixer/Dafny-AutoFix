@@ -67,7 +67,11 @@ infer_invariants() {
     local passing="$1"
     local violation_line="$2"
 
-    program=$(basename $(echo $PROGRAM | cut -d. -f1))
+    program=""
+    is_DSpec2Test=$(echo $PROGRAM | grep DSpec2Test)
+    if [[ $is_DSpec2Test ]]; then
+        program=$(basename $(echo $PROGRAM | cut -d. -f1)).dfy
+    fi
     passing_str=""
     inv_type_arg=""
     trace_output_file=""
@@ -99,7 +103,11 @@ generate_snapshots() {
     local violation_line="$1"
     local related_location_line="$2"
 
-    program=$(basename $(echo $PROGRAM | cut -d. -f1))
+    program=""
+    is_DSpec2Test=$(echo $PROGRAM | grep DSpec2Test)
+    if [[ $is_DSpec2Test ]]; then
+        program=$(basename $(echo $PROGRAM | cut -d. -f1)).dfy
+    fi
 
     echo "Generating snapshots"
     dotnet ./dafny/Binaries/Dafny.dll run "$PROGRAM" \
